@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {},
+"launch": {
+		"configurations": [
+			{
+				"name": "AIOSlimProto",
+				"type": "python",
+				"request": "launch",
+				"program": "./examples/example.py",
+				"justMyCode": false
+			  },
+		],
+		"compounds": []
+	}
+}
