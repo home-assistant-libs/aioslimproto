@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from enum import Enum
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from .client import SlimClient
 from .const import EventType
@@ -17,7 +16,7 @@ EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
 class SlimServer:
     """Server holding the SLIMproto players."""
 
-    def __init__(self, port: int = 3483, json_port: int | None = None) -> None:
+    def __init__(self, port: int = 3483, json_port: Optional[int] = None) -> None:
         """
         Initialize SlimServer instance.
 
@@ -59,7 +58,7 @@ class SlimServer:
             task.cancel()
 
     def signal_event(
-        self, event_type: EventType, player: SlimClient | None = None
+        self, event_type: EventType, player: Optional[SlimClient] = None
     ) -> None:
         """
         Signal event to all subscribers.
@@ -82,11 +81,11 @@ class SlimServer:
     def subscribe(
         self,
         cb_func: EventCallBackType,
-        event_filter: EventType | Tuple[EventType] | None = None,
-        player_filter: str | Tuple(str) | None = None,
+        event_filter: Union[EventType, Tuple[EventType], None] = None,
+        player_filter: Union[str, Tuple[str], None] = None,
     ) -> Callable:
         """
-        Add callback to event listeners.
+        Subscribe to events from Slimclients.
 
         Returns function to remove the listener.
             :param cb_func: callback function or coroutine

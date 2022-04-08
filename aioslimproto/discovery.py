@@ -6,13 +6,16 @@ import logging
 import socket
 import struct
 from collections import OrderedDict
+from typing import Optional
 
 from .util import get_hostname, get_ip
 
 LOGGER = logging.getLogger(__name__)
 
+# pylint:disable=consider-using-f-string
 
-async def start_discovery(control_port: int, json_rpc_port: int | None):
+
+async def start_discovery(control_port: int, json_rpc_port: Optional[int]):
     """Start discovery for players."""
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
@@ -129,7 +132,7 @@ class TLVDiscoveryResponseDatagram(Datagram):
 class DiscoveryProtocol:
     """Description of a discovery protocol."""
 
-    def __init__(self, control_port: int, json_rpc_port: int | None):
+    def __init__(self, control_port: int, json_rpc_port: Optional[int]):
         """Initialze class."""
         self.control_port = control_port
         self.json_rpc_port = json_rpc_port

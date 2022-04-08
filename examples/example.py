@@ -28,13 +28,13 @@ async def main():
         if evt == EventType.PLAYER_ADDED:
             await player.power(True)
             await player.volume_set(100)
-            await player.play_url("http://192.168.1.109:8095/test.flac")
+            await player.play_url("http://192.168.1.109:8095/multi/test.wav")
 
     server.subscribe(on_event)
 
     # wait a bit for some players to discover the server and connect
     await asyncio.sleep(3600)
-    
+
 
 try:
     asyncio.run(main())
