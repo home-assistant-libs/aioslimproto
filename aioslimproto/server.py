@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from types import TracebackType
+from typing import Callable, Dict, List, Optional, Tuple, Type, Union
 
 from .client import SlimClient
 from .const import EventType
@@ -139,3 +140,20 @@ class SlimServer:
 
         # forward all other events
         self.signal_event(event, client)
+
+    async def __aenter__(self) -> "SlimServer":
+        """Return Context manager."""
+        await self.start()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Type[BaseException],
+        exc_val: BaseException,
+        exc_tb: TracebackType,
+    ) -> Optional[bool]:
+        """Exit context manager."""
+        await self.stop()
+        if exc_val:
+            raise exc_val
+        return exc_type
