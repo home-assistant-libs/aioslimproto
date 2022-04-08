@@ -1,8 +1,8 @@
 aioslimproto
 ==================================
 
-.. image:: https://img.shields.io/pypi/v/music_assistant.svg
-        :target: https://pypi.python.org/pypi/music_assistant
+.. image:: https://img.shields.io/pypi/v/aioslimproto.svg
+        :target: https://pypi.python.org/pypi/aioslimproto
 
 
 **AIOSlimProto**
