@@ -33,8 +33,6 @@ async def main():
             await player.play_url(
                 "http://playerservices.streamtheworld.com/api/livestream-redirect/TLPSTR13AAC.aac"
             )
-            # await asyncio.sleep(5)
-            # await player.play_url("http://st01.dlf.de/dlf/01/128/mp3/stream.mp3")
 
     server.subscribe(on_event)
 

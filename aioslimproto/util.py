@@ -1,7 +1,6 @@
 """Helpers and utils."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import socket
 from typing import Any, Dict
@@ -27,20 +26,6 @@ def get_hostname():
     """Get hostname for this machine."""
     # pylint:disable=no-member
     return socket.gethostname()
-
-
-def run_periodic(period):
-    """Run a coroutine at interval."""
-
-    def scheduler(fcn):
-        async def wrapper(*args, **kwargs):
-            while True:
-                asyncio.create_task(fcn(*args, **kwargs))
-                await asyncio.sleep(period)
-
-        return wrapper
-
-    return scheduler
 
 
 def parse_capabilities(helo_data: bytes) -> Dict[str, Any]:

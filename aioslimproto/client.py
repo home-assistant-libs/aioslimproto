@@ -18,7 +18,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from .const import EventType
 from .errors import UnsupportedContentType
-from .util import parse_capabilities, parse_headers, run_periodic
+from .util import parse_capabilities, parse_headers
 
 # from http://wiki.slimdevices.com/index.php/SlimProtoTCPProtocol#HELO
 DEVICE_TYPE = {
@@ -116,20 +116,19 @@ class SlimClient:
         self.logger = logging.getLogger(__name__)
         self._reader = reader
         self._writer = writer
-        self._player_id = ""
-        self._device_type = ""
-        self._capabilities = Dict[str, str]
-        self._device_name = ""
-        self._last_volume = 0
-        self._last_heartbeat = 0
+        self._player_id: str = ""
+        self._device_type: str = ""
+        self._capabilities: Dict[str, str] = {}
+        self._device_name: str = ""
         self._volume_control = PySqueezeVolume()
-        self._powered = False
-        self._muted = False
+        self._powered: bool = False
+        self._muted: bool = False
         self._state = PlayerState.IDLE
-        self._elapsed_seconds = 0
-        self._elapsed_milliseconds = 0
-        self._current_url = ""
-        self._connected = False
+        self._last_timestamp: float = 0
+        self._elapsed_milliseconds: float = 0
+        self._last_report: int = 0
+        self._current_url: str = ""
+        self._connected: bool = False
         self._tasks: List[Task] = [
             create_task(self._socket_reader()),
             create_task(self._send_heartbeat()),
@@ -214,15 +213,15 @@ class SlimClient:
         return self._state
 
     @property
-    def elapsed_seconds(self) -> int:
+    def elapsed_seconds(self) -> float:
         """Return elapsed_time of current playing track in (fractions of) seconds."""
-        return self._elapsed_seconds
+        return self.elapsed_milliseconds / 1000
 
     @property
     def elapsed_milliseconds(self) -> int:
         """Return (realtime) elapsed time of current playing media in milliseconds."""
-        return self._elapsed_milliseconds + int(
-            (time.time() * 1000) - (self._last_heartbeat * 1000)
+        return self._elapsed_milliseconds + (
+            (time.time() - self._last_timestamp) * 1000
         )
 
     @property
@@ -326,7 +325,7 @@ class SlimClient:
                 f"Player does not support content type: {mime_type}"
             )
 
-        if port not in [80, 443, "80", "443"]:
+        if port not in (80, 443, "80", "443"):
             host += f":{port}"
         httpreq = (
             b"GET %s HTTP/1.0\r\n"
@@ -351,13 +350,11 @@ class SlimClient:
             httpreq=httpreq,
         )
 
-    @run_periodic(5)
     async def _send_heartbeat(self):
         """Send periodic heartbeat message to player."""
-        if not self._connected:
-            return
-        timestamp = int(time.time())
-        await self.send_strm(b"t", replay_gain=timestamp, flags=0)
+        while True:
+            await self.send_strm(b"t", flags=0)
+            await asyncio.sleep(5)
 
     async def _send_frame(self, command, data):
         """Send command to Squeeze player."""
@@ -501,9 +498,9 @@ class SlimClient:
         # pylint: disable=unused-argument
         self.logger.debug("STMf received - connection closed.")
         self._state = PlayerState.IDLE
-        self._elapsed_milliseconds = 0
-        self._elapsed_seconds = 0
-        self.callback(EventType.PLAYER_UPDATED, self)
+        # self._elapsed_milliseconds = 0
+        # self._prev_seconds = 0
+        # self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stmo(self, data):
         """
@@ -538,7 +535,6 @@ class SlimClient:
     def _process_stat_stmt(self, data):
         """Process incoming stat STMt message: heartbeat from client."""
         # pylint: disable=unused-variable
-        self._last_heartbeat = time.time()
         (
             num_crlf,
             mas_initialized,
@@ -557,13 +553,18 @@ class SlimClient:
             timestamp,
             error_code,
         ) = struct.unpack("!BBBLLLLHLLLLHLLH", data)
-        if self.state == PlayerState.PLAYING:
-            # elapsed seconds is weird when player is buffering etc.
-            # only rely on it if player is playing
-            self._elapsed_milliseconds = elapsed_milliseconds
-            if self._elapsed_seconds != elapsed_seconds:
-                self._elapsed_seconds = elapsed_seconds
-                self.callback(EventType.PLAYER_UPDATED, self)
+
+        self._elapsed_milliseconds = elapsed_milliseconds
+        # formally we should use the timestamp field to calculate roundtrip time
+        # but I have not seen any need for that so far and just assume that each player
+        # more or less has the same latency
+        cur_timestamp = time.time()
+        self._last_timestamp = cur_timestamp
+        if abs(elapsed_seconds - self._last_report) >= 1:
+            self._last_report = elapsed_seconds
+            # send report with elapsed time only every second while playing
+            # note that the (very) accurate elapsed/current is always available in the property
+            self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stmu(self, data):
         """Process incoming stat STMu message: Buffer underrun: Normal end of playback."""
@@ -629,10 +630,7 @@ class SlimClient:
                     raise UnsupportedContentType(
                         f"Player does not support content type: {content_type}"
                     )
-                if content_type == "audio/aacp":
-                    # https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol.html#AAC-specific_notes
-                    codc_msg = b"a2???"
-                elif content_type == "audio/aac":
+                if content_type in ("audio/aac", "audio/aacp"):
                     # https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol.html#AAC-specific_notes
                     codc_msg = b"a2???"
                 else:
