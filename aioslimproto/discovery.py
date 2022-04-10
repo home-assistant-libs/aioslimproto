@@ -15,18 +15,16 @@ LOGGER = logging.getLogger(__name__)
 # pylint:disable=consider-using-f-string
 
 
-async def start_discovery(control_port: int, json_rpc_port: Optional[int]):
+async def start_discovery(
+    control_port: int, json_rpc_port: Optional[int]
+) -> asyncio.BaseTransport:
     """Start discovery for players."""
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
         lambda: DiscoveryProtocol(control_port, json_rpc_port),
         local_addr=("0.0.0.0", control_port),
     )
-    try:
-        while True:
-            await asyncio.sleep(60)  # serve forever
-    finally:
-        transport.close()
+    return transport
 
 
 class Datagram:

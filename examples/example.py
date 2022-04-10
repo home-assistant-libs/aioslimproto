@@ -8,7 +8,7 @@ import logging
 path.insert(1, dirname(dirname(abspath(__file__))))
 
 from aioslimproto import SlimServer
-from aioslimproto.const import EventType
+from aioslimproto.const import EventType, SlimEvent
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -22,17 +22,16 @@ async def main():
     await server.start()
 
     # subscribe to events
-    async def on_event(evt, player):
-        print(evt)
-        # send play request to a player
-        if evt == EventType.PLAYER_CONNECTED:
-            if player.player_id != "ac:de:48:00:11:22":
-                return
+    async def on_event(evt: SlimEvent):
+        print(f"Received event: {evt}")
+        # send request to a player
+        if evt.type == EventType.PLAYER_CONNECTED:
+            player = server.get_player(evt.player_id)
             await player.power(True)
             await player.volume_set(100)
-            await player.play_url(
-                "http://playerservices.streamtheworld.com/api/livestream-redirect/TLPSTR13AAC.aac"
-            )
+            # await player.play_url(
+            #     "http://playerservices.streamtheworld.com/api/livestream-redirect/TLPSTR13AAC.aac"
+            # )
 
     server.subscribe(on_event)
 
