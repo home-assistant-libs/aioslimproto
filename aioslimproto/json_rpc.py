@@ -4,7 +4,7 @@ Basic implementation of JSON RPC control of SlimProto players.
 
 Some players (e.g. PiCorePlayer) use the jsonrpc api to control for example volume remotely.
 This is a very basic implementation that only fulfills commands needed by those players,
-other commands will be published as-is on the eventbus for a library consumers to act on.
+other commands will be published as-is on the eventbus for library consumers to act on.
 there's no support for media browsing through this minimal api, this is NOT a replacement for
 the Logitech Media Server.
 
