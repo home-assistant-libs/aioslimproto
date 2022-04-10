@@ -133,7 +133,11 @@ class SlimServer:
                 self._players.pop(player_id, None)
 
             if event_type == EventType.PLAYER_CONNECTED:
-                assert player_id not in self._players
+                prev = self._players.pop(player_id, None)
+                if prev is not None:
+                    # player reconnected while we did not yet cleanup the old socket
+                    prev.disconnect()
+
                 self._players[player_id] = client
 
             # forward all other events as-is
