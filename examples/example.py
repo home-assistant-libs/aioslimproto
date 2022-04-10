@@ -24,11 +24,17 @@ async def main():
     # subscribe to events
     async def on_event(evt, player):
         print(evt)
-        # send play request to the first player that connects
-        if evt == EventType.PLAYER_ADDED:
+        # send play request to a player
+        if evt == EventType.PLAYER_CONNECTED:
+            if player.player_id != "ac:de:48:00:11:22":
+                return
             await player.power(True)
             await player.volume_set(100)
-            await player.play_url("http://192.168.1.109:8095/multi/test.wav")
+            await player.play_url(
+                "http://playerservices.streamtheworld.com/api/livestream-redirect/TLPSTR13AAC.aac"
+            )
+            # await asyncio.sleep(5)
+            # await player.play_url("http://st01.dlf.de/dlf/01/128/mp3/stream.mp3")
 
     server.subscribe(on_event)
 

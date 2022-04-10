@@ -54,7 +54,10 @@ class SlimServer:
         ]
 
     async def stop(self):
-        """Stop runninbg the server."""
+        """Stop running the server."""
+        for client in list(self._players.values()):
+            client.disconnect()
+        self._players = {}
         for task in self._bgtasks:
             task.cancel()
 
@@ -68,7 +71,7 @@ class SlimServer:
             :param event_details: optional details to send with the event.
         """
         for cb_func, event_filter, player_filter in self._subscribers:
-            if player and player_filter and player.id not in player_filter:
+            if player and player_filter and player.player_id not in player_filter:
                 continue
             if event_filter and event_type not in event_filter:
                 continue
@@ -116,30 +119,21 @@ class SlimServer:
         """Create player from new connection on the socket."""
         addr = writer.get_extra_info("peername")
         self.logger.debug("Socket client connected: %s", addr)
-        SlimClient(reader, writer, self._client_callback)
 
-    def _client_callback(self, event: EventType, client: SlimClient):
-        """Handle event/callback from SlimClient."""
-        player_id = client.player_id
-        if not player_id:
-            return
+        def client_callback(event: EventType, client: SlimClient):
+            player_id = client.player_id
 
-        if event == EventType.PLAYER_DISCONNECTED:
-            # player disconnected, cleanup and emit event
-            player = self._players.pop(player_id)
-            player.disconnect()
-            self.signal_event(EventType.PLAYER_REMOVED, player)
-            return
+            if event == EventType.PLAYER_DISCONNECTED:
+                self._players.pop(player_id, None)
 
-        if event == EventType.PLAYER_CONNECTED:
-            # new player (or reconnected)
-            assert player_id not in self._players
-            self._players[player_id] = client
-            self.signal_event(EventType.PLAYER_ADDED, client)
-            return
+            if event == EventType.PLAYER_CONNECTED:
+                assert player_id not in self._players
+                self._players[player_id] = client
 
-        # forward all other events
-        self.signal_event(event, client)
+            # forward all other events as-is
+            self.signal_event(event, client)
+
+        SlimClient(reader, writer, client_callback)
 
     async def __aenter__(self) -> "SlimServer":
         """Return Context manager."""

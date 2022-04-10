@@ -1,10 +1,13 @@
 """Setup for aioslimproto."""
+from pathlib import Path
+
 from setuptools import find_packages, setup
 
-LONG_DESC = open("README.md").read()
+PROJECT_DIR = Path(__file__).parent.resolve()
+README_FILE = PROJECT_DIR / "README.rst"
+REQUIREMENTS_FILE = PROJECT_DIR / "requirements.txt"
 PACKAGES = find_packages(exclude=["tests", "tests.*"])
-REQUIREMENTS = list(val.strip() for val in open("requirements.txt"))
-MIN_PY_VERSION = "3.9"
+PROJECT_REQ_PYTHON_VERSION = "3.9"
 
 setup(
     name="aioslimproto",
@@ -14,13 +17,13 @@ setup(
     author="Marcel van der Veldt",
     author_email="marcelveldt@users.noreply.github.com",
     description="Python module to talk to Logitech Squeezebox players directly (without Logitech server).",
-    long_description=LONG_DESC,
+    long_description=README_FILE.read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     packages=PACKAGES,
     zip_safe=True,
     platforms="any",
-    install_requires=REQUIREMENTS,
-    python_requires=f">={MIN_PY_VERSION}",
+    install_requires=REQUIREMENTS_FILE.read_text(encoding="utf-8"),
+    python_requires=f">={PROJECT_REQ_PYTHON_VERSION}",
     classifiers=[
         "Intended Audience :: Developers",
         "Operating System :: OS Independent",
