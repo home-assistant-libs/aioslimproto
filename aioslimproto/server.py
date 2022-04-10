@@ -130,7 +130,10 @@ class SlimServer:
             player_id = client.player_id
 
             if event_type == EventType.PLAYER_DISCONNECTED:
-                self._players.pop(player_id, None)
+                prev = self._players.pop(player_id, None)
+                if prev is None:
+                    # already cleaned up ?
+                    return
 
             if event_type == EventType.PLAYER_CONNECTED:
                 prev = self._players.pop(player_id, None)

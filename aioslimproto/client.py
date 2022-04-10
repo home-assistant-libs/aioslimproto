@@ -239,6 +239,7 @@ class SlimClient:
 
     async def stop(self):
         """Send stop command to player."""
+        self._current_url = ""
         await self.send_strm(b"q")
 
     async def play(self):
@@ -288,6 +289,8 @@ class SlimClient:
         if send_flush:
             await self.send_strm(b"f", autostart=b"0")
         self.logger.debug("play url: %s", url)
+        if not url.startswith("http"):
+            raise UnsupportedContentType(f"Invalid URL: {url}")
         self._current_url = url
         self._powered = True
         enable_crossfade = crossfade > 0
@@ -346,6 +349,8 @@ class SlimClient:
             trans_duration=crossfade,
             server_port=port,
             server_ip=ipaddr_b,
+            threshold=200,
+            output_threshold=10,
             flags=0x20 if scheme == "https" else 0x00,
             httpreq=httpreq,
         )
@@ -498,10 +503,7 @@ class SlimClient:
         # pylint: disable=unused-argument
         self.logger.debug("STMf received - connection closed.")
         self._state = PlayerState.IDLE
-        self._current_url = ""
-        # self._elapsed_milliseconds = 0
-        # self._prev_seconds = 0
-        # self.callback(EventType.PLAYER_UPDATED, self)
+        self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stmo(self, data):
         """
@@ -621,7 +623,8 @@ class SlimClient:
             elif content_type not in CODEC_MAPPING:
                 # use m as default/fallback
                 self.logger.debug(
-                    "Unable to parse mime type %s, using mp3 as default codec"
+                    "Unable to parse mime type %s, using mp3 as default codec",
+                    content_type,
                 )
                 codc_msg = b"m????"
             else:
