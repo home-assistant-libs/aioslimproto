@@ -387,7 +387,7 @@ class SlimClient:
                     operation = operation.strip(b"!").strip().decode().lower()
                     handler = getattr(self, f"_process_{operation}", None)
                     if handler is None:
-                        self.logger.warning("No handler for %s", operation)
+                        self.logger.debug("No handler for %s", operation)
                     elif asyncio.iscoroutinefunction(handler):
                         create_task(handler(packet))
                     else:
@@ -498,6 +498,7 @@ class SlimClient:
         # pylint: disable=unused-argument
         self.logger.debug("STMf received - connection closed.")
         self._state = PlayerState.IDLE
+        self._current_url = ""
         # self._elapsed_milliseconds = 0
         # self._prev_seconds = 0
         # self.callback(EventType.PLAYER_UPDATED, self)
@@ -509,7 +510,7 @@ class SlimClient:
         No more decoded (uncompressed) data to play; triggers rebuffering.
         """
         # pylint: disable=unused-argument
-        self.logger.warning("STMo received - output underrun.")
+        self.logger.debug("STMo received - output underrun.")
 
     def _process_stat_stmp(self, data):
         """Process incoming stat STMp message: Pause confirmed."""
