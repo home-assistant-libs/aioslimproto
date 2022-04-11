@@ -4,7 +4,7 @@ from pathlib import Path
 from setuptools import find_packages, setup
 
 PROJECT_DIR = Path(__file__).parent.resolve()
-README_FILE = PROJECT_DIR / "README.rst"
+README_FILE = PROJECT_DIR / "README.md"
 REQUIREMENTS_FILE = PROJECT_DIR / "requirements.txt"
 PACKAGES = find_packages(exclude=["tests", "tests.*"])
 PROJECT_REQ_PYTHON_VERSION = "3.9"
