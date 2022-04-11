@@ -1,10 +1,7 @@
 aioslimproto
 ==================================
 
-.. image:: https://img.shields.io/pypi/v/aioslimproto.svg
-        :target: https://pypi.python.org/pypi/aioslimproto
-
-
+[![pypi_badge](https://img.shields.io/pypi/v/aioslimproto.svg)](https://pypi.python.org/pypi/aioslimproto)
 
 **AIOSlimProto**
 
