@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING, List
 from aioslimproto.const import EventType, SlimEvent
 
 if TYPE_CHECKING:
-    from .server import SlimServer
     from .client import SlimClient
+    from .server import SlimServer
 
 CHUNK_SIZE = 50
 
