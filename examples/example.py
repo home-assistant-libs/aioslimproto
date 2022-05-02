@@ -7,8 +7,9 @@ import logging
 
 path.insert(1, dirname(dirname(abspath(__file__))))
 
-from aioslimproto import SlimServer
-from aioslimproto.const import EventType, SlimEvent
+# pylint: disable=wrong-import-position
+from aioslimproto import SlimServer  # noqa: E402
+from aioslimproto.const import EventType, SlimEvent  # noqa: E402
 
 logging.basicConfig(
     level=logging.DEBUG,
