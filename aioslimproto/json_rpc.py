@@ -33,24 +33,19 @@ class JSONRPCMessage:
 
     id: Union[int]
     method: str
-    params: List[Union[str, List[str]]]
+    player_id: str
+    command: str
+    command_args: list[str]
 
-    @property
-    def player_id(self) -> str:
-        """Return player ID targetting this request."""
-        return self.params[0]
-
-    @property
-    def command(self) -> str:
-        """Return the params for the target player."""
-        return self.params[1][0]
-
-    @property
-    def command_args(self) -> List[str]:
-        """Return the command arguments."""
-        if len(self.params[1]) > 1:
-            return self.params[1][1:]
-        return []
+    @classmethod
+    def from_json(  # pylint: disable=redefined-builtin
+        cls, id: int, method: str, params: list
+    ) -> JSONRPCMessage:
+        """Create a JSONRPCMessage from JSON."""
+        player_id = str(params[0])
+        command = str(params[1][0])
+        command_args = [str(v) for v in params[1][1:]]
+        return cls(id, method, player_id, command, command_args)
 
     @property
     def command_str(self) -> str:
@@ -142,7 +137,7 @@ class SlimJSONRPC:
                 await self.send_response(writer, 405, "Method or path not allowed")
                 return
 
-            rpc_msg = JSONRPCMessage(**json.loads(body))
+            rpc_msg = JSONRPCMessage.from_json(**json.loads(body))
             self.logger.debug(
                 "handle request: %s for player %s",
                 rpc_msg.command_str,
