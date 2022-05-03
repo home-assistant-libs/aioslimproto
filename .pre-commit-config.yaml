@@ -38,4 +38,4 @@ repos:
         language: system
         types: [python]
         args: ["-rn", "-sn", "--rcfile=pylintrc", "--fail-on=I"]
-        exclude: ^examples/|^.venv/|^.vscode/
+        exclude: ^examples/|^.venv/|^.vscode/|^tests
