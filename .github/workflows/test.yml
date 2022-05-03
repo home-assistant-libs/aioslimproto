@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.9', '3.10']
+        python-version: ["3.9", "3.10"]
 
     steps:
       - uses: actions/checkout@v3
@@ -29,6 +29,3 @@ jobs:
           pre-commit install-hooks
       - name: Lint/test with pre-commit
         run: pre-commit run --all-files
-      - name: Run pylint on changed files
-        run: |
-          pylint -rn -sn --rcfile=pylintrc --fail-on=I $(git ls-files '*.py')
