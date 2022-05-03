@@ -6,10 +6,10 @@ import logging
 from types import TracebackType
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
+from .cli import SlimProtoCLI
 from .client import SlimClient
 from .const import EventType, SlimEvent
 from .discovery import start_discovery
-from .json_rpc import SlimJSONRPC
 
 EventCallBackType = Callable[[SlimEvent], None]
 EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
@@ -18,23 +18,26 @@ EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
 class SlimServer:
     """Server holding the SLIMproto players."""
 
-    def __init__(self, port: int = 3483, json_port: Optional[int] = 3484) -> None:
+    def __init__(
+        self,
+        port: int = 3483,
+        cli_port: Optional[int] = 9090,
+        cli_port_json: Optional[int] = 3484,
+    ) -> None:
         """
         Initialize SlimServer instance.
 
         control_port: The TCP port for the slimproto communication, default is 3483.
-        json_port: Optionally start a simple json rpc server on this port for compatability
+        cli_port: Optionally start a simple Telnet CLI server on this port for compatability
         with players relying on the server providing this feature. None to disable.
+        cli_port_json: Same as cli port but it's newer JSOn RPC equivalent.
         """
         self.logger = logging.getLogger(__name__)
         self.port = port
-        self.json_port = json_port
+        self.cli = SlimProtoCLI(self, cli_port, cli_port_json)
         self._subscribers: List[EventSubscriptionType] = []
         self._socket_servers: List[Union[asyncio.Server, asyncio.BaseTransport]] = []
         self._players: Dict[str, SlimClient] = {}
-        self._jsonrpc: Optional[SlimJSONRPC] = None
-        if json_port is not None:
-            self._jsonrpc = SlimJSONRPC(self, json_port)
 
     @property
     def players(self) -> List[SlimClient]:
@@ -52,10 +55,9 @@ class SlimServer:
             # start slimproto server
             await asyncio.start_server(self._create_client, "0.0.0.0", self.port),
             # setup discovery
-            await start_discovery(self.port, self.json_port),
+            await start_discovery(self.port, self.cli.cli_port_json),
         ]
-        if self._jsonrpc is not None:
-            self._socket_servers.append(await self._jsonrpc.start())
+        self._socket_servers += await self.cli.start()
 
     async def stop(self):
         """Stop running the server."""

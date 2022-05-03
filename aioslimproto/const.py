@@ -15,7 +15,7 @@ class EventType(Enum):
     PLAYER_NAME_RECEIVED = "player_name_received"
     PLAYER_DECODER_READY = "decoder_ready"
     PLAYER_DECODER_ERROR = "decoder_error"
-    PLAYER_RPC_EVENT = "player_rpc_event"
+    PLAYER_CLI_EVENT = "player_cli_event"
 
 
 @dataclass
