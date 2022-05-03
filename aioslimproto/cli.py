@@ -39,7 +39,7 @@ class CLIMessage:
     command_args: List[str]
 
     @classmethod
-    def from_string(cls, raw: str) -> JSONRPCMessage:
+    def from_string(cls, raw: str) -> CLIMessage:
         """Parse CLIMessage from raw message string."""
         parts = raw.split(" ")
         return cls(
@@ -135,9 +135,9 @@ class SlimProtoCLI:
         """Handle button command."""
         cmd = args[0]
         if cmd == "volup":
-            await player.volume_set(min(100, player.volume_level + 2))
+            await player.volume_set(min(100, player.volume_level + 5))
         elif cmd == "voldown":
-            await player.volume_set(max(0, player.volume_level - 2))
+            await player.volume_set(max(0, player.volume_level - 5))
         elif cmd == "power":
             await player.power(not player.powered)
 
