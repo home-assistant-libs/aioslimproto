@@ -18,6 +18,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, List, Optional, Union
+from aioslimproto.client import PlayerState
 
 from aioslimproto.const import EventType, SlimEvent
 from aioslimproto.errors import InvalidPlayer, SlimProtoException, UnsupportedCommand
@@ -149,7 +150,15 @@ class SlimProtoCLI:
     @staticmethod
     async def handle_pause(player: SlimClient, args: List[str]) -> None:
         """Handle pause command."""
-        await player.pause()
+        if args:
+            should_pause = bool(args[0])
+        else:
+            # without args = toggle
+            should_pause = player.state != PlayerState.PAUSED
+        if should_pause:
+            await player.pause()
+        else:
+            await player.play()
 
     @staticmethod
     async def handle_stop(player: SlimClient, args: List[str]) -> None:
