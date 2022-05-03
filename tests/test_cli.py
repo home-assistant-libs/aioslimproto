@@ -6,9 +6,7 @@ from aioslimproto import cli
 def test_msg_instantiation():
     """Test instantiating a CLI message."""
     raw_message = "aa:b:cc:dd:ee mixer volume 50"
-    msg = cli.CLIMessage.from_string(
-        raw_message
-    )
+    msg = cli.CLIMessage.from_string(raw_message)
     assert msg.player_id == "aa:b:cc:dd:ee"
     assert msg.command_str == "mixer volume 50"
     assert msg.command == "mixer"
@@ -16,13 +14,12 @@ def test_msg_instantiation():
 
     # No command args
     raw_message = "aa:b:cc:dd:ee pause"
-    msg = cli.CLIMessage.from_string(
-        raw_message
-    )
+    msg = cli.CLIMessage.from_string(raw_message)
     assert msg.player_id == "aa:b:cc:dd:ee"
     assert msg.command_str == "pause"
     assert msg.command == "pause"
     assert msg.command_args == []
+
 
 def test_json_msg_instantiation():
     """Test instantiating a JSON RPC message."""

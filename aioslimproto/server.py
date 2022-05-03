@@ -6,10 +6,10 @@ import logging
 from types import TracebackType
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
+from .cli import SlimProtoCLI
 from .client import SlimClient
 from .const import EventType, SlimEvent
 from .discovery import start_discovery
-from .cli import SlimProtoCLI
 
 EventCallBackType = Callable[[SlimEvent], None]
 EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
@@ -18,7 +18,12 @@ EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
 class SlimServer:
     """Server holding the SLIMproto players."""
 
-    def __init__(self, port: int = 3483, cli_port: Optional[int] = 9090, cli_port_json: Optional[int] = 3484) -> None:
+    def __init__(
+        self,
+        port: int = 3483,
+        cli_port: Optional[int] = 9090,
+        cli_port_json: Optional[int] = 3484,
+    ) -> None:
         """
         Initialize SlimServer instance.
 
