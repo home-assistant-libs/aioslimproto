@@ -18,8 +18,8 @@ import asyncio
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, List, Optional, Union
-from aioslimproto.client import PlayerState
 
+from aioslimproto.client import PlayerState
 from aioslimproto.const import EventType, SlimEvent
 from aioslimproto.errors import InvalidPlayer, SlimProtoException, UnsupportedCommand
 
