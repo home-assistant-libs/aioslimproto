@@ -142,6 +142,9 @@ class SlimClient:
         self._tasks = []
         if self._connected:
             self._connected = False
+            if self._writer.can_write_eof():
+                self._writer.write_eof()
+            self._writer.close()
             self.callback(EventType.PLAYER_DISCONNECTED, self)
 
     @property
@@ -228,14 +231,6 @@ class SlimClient:
     def current_url(self):
         """Return uri of currently loaded track."""
         return self._current_url
-
-    async def _initialize_player(self):
-        """Set some startup settings for the player."""
-        # send version
-        await self._send_frame(b"vers", b"7.8")
-        await self._send_frame(b"setd", struct.pack("B", 0))
-        await self._send_frame(b"setd", struct.pack("B", 4))
-        await self.stop()
 
     async def stop(self):
         """Send stop command to player."""
@@ -445,7 +440,7 @@ class SlimClient:
         )
         await self._send_frame(b"strm", data + server_ip + httpreq)
 
-    def _process_helo(self, data: bytes):
+    async def _process_helo(self, data: bytes):
         """Process incoming HELO event from player (player connected)."""
         self.logger.debug("HELO received: %s", data)
         # player connected, sends helo info message
@@ -456,7 +451,16 @@ class SlimClient:
         self._device_type = DEVICE_TYPE.get(dev_id, "unknown device")
         self._capabilities = parse_capabilities(data)
         self.logger.debug("Player connected: %s", self.player_id)
-        asyncio.create_task(self._initialize_player())
+        # Set some startup settings for the player
+        await self._send_frame(b"vers", b"7.8")
+        await self._send_frame(b"setd", struct.pack("B", 0))
+        await self._send_frame(b"setd", struct.pack("B", 4))
+        await self.stop()
+        # restore last power and volume levels
+        # NOTE: this can be improved by storing the previous volume/power levels
+        # so they can be restored when the player (re)connects.
+        await self.power(self._powered)
+        await self.volume_set(self.volume_level)
         self._connected = True
         self.callback(EventType.PLAYER_CONNECTED, self)
 
@@ -483,10 +487,9 @@ class SlimClient:
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_audg(self, data):
-        """Process incoming stat AUDg message (volume level)."""
-        # TODO: process volume level
-        self.logger.debug("AUDg received - Volume level: %s", data)
-        self.callback(EventType.PLAYER_UPDATED, self)
+        """Process incoming stat AUDg message."""
+        # srtm-s command received.
+        # Some players may send this as aknowledge of volume change (audg command).
 
     def _process_stat_stmc(self, data):
         """Process incoming stat STMc message (connected)."""
@@ -495,13 +498,11 @@ class SlimClient:
     def _process_stat_stmd(self, data):
         """Process incoming stat STMd message (decoder ready)."""
         # pylint: disable=unused-argument
-        self.logger.debug("STMd received - Decoder Ready for next track.")
         self.callback(EventType.PLAYER_DECODER_READY, self)
 
     def _process_stat_stmf(self, data):
         """Process incoming stat STMf message (connection closed)."""
         # pylint: disable=unused-argument
-        self.logger.debug("STMf received - connection closed.")
         self._state = PlayerState.IDLE
         self.callback(EventType.PLAYER_UPDATED, self)
 
