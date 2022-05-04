@@ -16,12 +16,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 async def start_discovery(
-    control_port: int, json_rpc_port: Optional[int]
+    control_port: int, cli_port: Optional[int], cli_port_json: Optional[int]
 ) -> asyncio.BaseTransport:
     """Start discovery for players."""
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
-        lambda: DiscoveryProtocol(control_port, json_rpc_port),
+        lambda: DiscoveryProtocol(control_port, cli_port, cli_port_json),
         local_addr=("0.0.0.0", control_port),
     )
     return transport
@@ -130,10 +130,16 @@ class TLVDiscoveryResponseDatagram(Datagram):
 class DiscoveryProtocol:
     """Description of a discovery protocol."""
 
-    def __init__(self, control_port: int, json_rpc_port: Optional[int]):
+    def __init__(
+        self,
+        control_port: int,
+        cli_port: Optional[int],
+        cli_port_json: Optional[int],
+    ):
         """Initialze class."""
         self.control_port = control_port
-        self.json_rpc_port = json_rpc_port
+        self.cli_port = cli_port
+        self.cli_port_json = cli_port_json
         self.transport = None
 
     def connection_made(self, transport):
@@ -170,9 +176,12 @@ class DiscoveryProtocol:
                 if value == "0.0.0.0":
                     # do not send back an ip address
                     typ = None
-            elif typ == "JSON" and self.json_rpc_port is not None:
+            elif typ == "JSON" and self.cli_port_json is not None:
                 # send port as a string
-                value = str(self.json_rpc_port)
+                value = str(self.cli_port_json)
+            elif typ == "CLIP" and self.cli_port is not None:
+                # send port as a string
+                value = str(self.cli_port)
             elif typ == "VERS":
                 # send server version
                 value = "7.9"

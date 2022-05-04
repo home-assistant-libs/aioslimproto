@@ -55,7 +55,7 @@ class SlimServer:
             # start slimproto server
             await asyncio.start_server(self._create_client, "0.0.0.0", self.port),
             # setup discovery
-            await start_discovery(self.port, self.cli.cli_port_json),
+            await start_discovery(self.port, self.cli.cli_port, self.cli.cli_port_json),
         ]
         self._socket_servers += await self.cli.start()
 
