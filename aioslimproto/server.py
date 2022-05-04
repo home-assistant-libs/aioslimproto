@@ -22,7 +22,7 @@ class SlimServer:
         self,
         port: int = 3483,
         cli_port: Optional[int] = 9090,
-        cli_port_json: Optional[int] = 3484,
+        cli_port_json: Optional[int] = 9091,
     ) -> None:
         """
         Initialize SlimServer instance.
