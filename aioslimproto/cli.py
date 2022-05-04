@@ -42,12 +42,20 @@ class CLIMessage:
     @classmethod
     def from_string(cls, raw: str) -> CLIMessage:
         """Parse CLIMessage from raw message string."""
-        parts = raw.split(" ")
+        cmd_parts = raw.split(" ")
+        if len(cmd_parts) == 1:
+            player_id = ""
+            command = cmd_parts[0]
+            command_str = raw
+        else:
+            player_id = cmd_parts[0]
+            command = cmd_parts[1]
+            command_str = raw.replace(player_id, "").strip()
         return cls(
-            player_id=parts[0],
-            command_str=" ".join(parts[1:]),
-            command=parts[1],
-            command_args=parts[2:],
+            player_id=player_id,
+            command_str=command_str,
+            command=command,
+            command_args=cmd_parts[1:],
         )
 
 
@@ -187,8 +195,12 @@ class SlimProtoCLI:
                 response = raw_request
                 if result is not None:
                     response += json.dumps(result)
+                response += "\n"
                 writer.write(response.encode("iso-8859-1"))
                 await writer.drain()
+        except SlimProtoException:
+            err = f"Unhandled request: {raw_request}\n"
+            writer.write(err.encode("iso-8859-1"))
         finally:
             # make sure the connection gets closed
             writer.close()
@@ -221,7 +233,6 @@ class SlimProtoCLI:
             )
 
         except SlimProtoException as exc:
-            self.logger.exception(exc)
             await self.send_json_response(writer, 501, str(exc))
 
         finally:
@@ -236,6 +247,10 @@ class SlimProtoCLI:
             msg.command_str,
             msg.player_id,
         )
+        if not msg.player_id:
+            # we do not (yet) support generic commands
+            raise UnsupportedCommand(f"No handler for {msg.command_str}")
+
         player = self.server.get_player(msg.player_id)
         if not player:
             raise InvalidPlayer(f"Player {msg.player_id} not found")
@@ -255,7 +270,7 @@ class SlimProtoCLI:
         # find handler for request
         handler = getattr(self, f"handle_{msg.command}", None)
         if handler is None:
-            raise UnsupportedCommand(f"No handler for {msg.command}")
+            raise UnsupportedCommand(f"No handler for {msg.command_str}")
 
         return await handler(player, msg.command_args)
 
