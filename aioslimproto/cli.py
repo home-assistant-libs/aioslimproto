@@ -44,7 +44,7 @@ class CLIMessage:
         """Parse CLIMessage from raw message string."""
         cmd_parts = raw.split(" ")
         if len(cmd_parts) == 1:
-            player_id = "?"
+            player_id = ""
             command = cmd_parts[0]
             command_str = raw
         else:
@@ -198,10 +198,8 @@ class SlimProtoCLI:
                 response += "\n"
                 writer.write(response.encode("iso-8859-1"))
                 await writer.drain()
-        except SlimProtoException as exc:
-            err = f"Unhandled request: {raw_request}"
-            self.logger.debug(err, exc_info=exc)
-            err += "\n"
+        except SlimProtoException:
+            err = f"Unhandled request: {raw_request}\n"
             writer.write(err.encode("iso-8859-1"))
         finally:
             # make sure the connection gets closed
@@ -235,7 +233,6 @@ class SlimProtoCLI:
             )
 
         except SlimProtoException as exc:
-            self.logger.debug("Unhandled request: %s", body, exc_info=exc)
             await self.send_json_response(writer, 501, str(exc))
 
         finally:
@@ -250,6 +247,10 @@ class SlimProtoCLI:
             msg.command_str,
             msg.player_id,
         )
+        if not msg.player_id:
+            # we do not (yet) support generic commands
+            raise UnsupportedCommand(f"No handler for {msg.command_str}")
+
         player = self.server.get_player(msg.player_id)
         if not player:
             raise InvalidPlayer(f"Player {msg.player_id} not found")
@@ -269,7 +270,7 @@ class SlimProtoCLI:
         # find handler for request
         handler = getattr(self, f"handle_{msg.command}", None)
         if handler is None:
-            raise UnsupportedCommand(f"No handler for {msg.command}")
+            raise UnsupportedCommand(f"No handler for {msg.command_str}")
 
         return await handler(player, msg.command_args)
 
