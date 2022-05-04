@@ -22,7 +22,7 @@ class SlimServer:
         self,
         port: int = 3483,
         cli_port: Optional[int] = 9090,
-        cli_port_json: Optional[int] = 3484,
+        cli_port_json: Optional[int] = 9091,
     ) -> None:
         """
         Initialize SlimServer instance.
@@ -55,7 +55,7 @@ class SlimServer:
             # start slimproto server
             await asyncio.start_server(self._create_client, "0.0.0.0", self.port),
             # setup discovery
-            await start_discovery(self.port, self.cli.cli_port_json),
+            await start_discovery(self.port, self.cli.cli_port, self.cli.cli_port_json),
         ]
         self._socket_servers += await self.cli.start()
 
