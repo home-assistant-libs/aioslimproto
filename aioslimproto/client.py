@@ -146,8 +146,6 @@ class SlimClient:
                 self._writer.write_eof()
             self._writer.close()
             self.callback(EventType.PLAYER_DISCONNECTED, self)
-        self._writer = None
-        self._reader = None
 
     @property
     def connected(self) -> bool:
@@ -459,6 +457,8 @@ class SlimClient:
         await self._send_frame(b"setd", struct.pack("B", 4))
         await self.stop()
         # restore last power and volume levels
+        # NOTE: this can be improved by storing the previous volume/power levels
+        # so they can be restored when the player (re)connects.
         await self.power(self._powered)
         await self.volume_set(self.volume_level)
         self._connected = True
