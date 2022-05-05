@@ -57,7 +57,7 @@ PCM_SAMPLE_SIZE = {
 PCM_SAMPLE_RATE = {
     # map with sample rates used in slimproto."""
     # https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol.html#Command:_.22strm.22
-    # See %pcm_sample_rates in slimserver/Slim/Player/Squeezebox2.pm and 
+    # See %pcm_sample_rates in slimserver/Slim/Player/Squeezebox2.pm and
     # slimserver/Slim/Player/SqueezePlay.pm for definition of sample rates
     11000: b"0",
     22000: b"1",
