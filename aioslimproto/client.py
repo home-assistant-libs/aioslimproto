@@ -575,7 +575,7 @@ class SlimClient:
             self._last_report = elapsed_seconds
             # send report with elapsed time only every second while playing
             # note that the (very) accurate elapsed/current is always available in the property
-            self.callback(EventType.PLAYER_UPDATED, self)
+            self.callback(EventType.PLAYER_TIME_UPDATED, self)
 
     def _process_stat_stmu(self, data):
         """Process incoming stat STMu message: Buffer underrun: Normal end of playback."""
