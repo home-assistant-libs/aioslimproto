@@ -316,7 +316,14 @@ class SlimClient:
             port = 80
 
         if scheme == "https" and not self._capabilities.get("CanHTTPS"):
-            raise UnsupportedContentType("Player does not support HTTPS")
+            # most stream urls are available on HTTP too, try to use that instead
+            self.logger.warning(
+                "HTTPS stream requested but player does not support HTTPS, "
+                "trying HTTP instead but playback may fail."
+            )
+            return await self.play_url(
+                url.replace("https", "http"), crossfade, mime_type, send_flush
+            )
 
         if mime_type is None:
             # try to get the audio format from file extension
