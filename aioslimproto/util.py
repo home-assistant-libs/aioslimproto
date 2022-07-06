@@ -45,6 +45,7 @@ async def select_free_port(range_start: int, range_end: int) -> int:
         for port in range(range_start, range_end):
             if not is_port_in_use(port):
                 return port
+        raise OSError("No free port available")
 
     return await asyncio.get_running_loop().run_in_executor(None, _select_free_port)
 
