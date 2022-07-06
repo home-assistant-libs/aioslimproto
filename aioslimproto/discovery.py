@@ -33,6 +33,7 @@ class Datagram:
     @classmethod
     def decode(cls, data):
         """Decode a datagram message."""
+        data = data.decode(errors="replace")
         if data[0] == "e":
             return TLVDiscoveryRequestDatagram(data)
         if data[0] == "E":
@@ -199,7 +200,6 @@ class DiscoveryProtocol:
         """Datagram received callback."""
         # pylint: disable=broad-except
         try:
-            data = data.decode()
             dgram = Datagram.decode(data)
             if isinstance(dgram, ClientDiscoveryDatagram):
                 self.send_discovery_response(addr)
@@ -207,7 +207,13 @@ class DiscoveryProtocol:
                 resonsedata = self.build_tlv_response(dgram.data)
                 self.send_tlv_discovery_response(resonsedata, addr)
         except Exception as exc:
-            LOGGER.exception(exc)
+            LOGGER.error(
+                "Error occured while trying to parse a datagram from %s: %s",
+                addr,
+                str(exc),
+                exc_info=exc,
+            )
+            LOGGER.error(data)
 
     def send_discovery_response(self, addr):
         """Send discovery response message."""

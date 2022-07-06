@@ -108,6 +108,11 @@ FORMAT_BYTE = {
     "aif": b"p",
 }
 
+FALLBACK_MODEL = "Squeezebox"
+FALLLBACK_FIRMWARE = "Unknown"
+FALLBACK_CODECS = ["pcm"]
+FALLBACK_SAMPLE_RATE = 96000
+
 
 class SlimClient:
     """SLIMProto socket client."""
@@ -170,24 +175,26 @@ class SlimClient:
         return self._device_type
 
     @property
-    def device_model(self) -> str | None:
+    def device_model(self) -> str:
         """Return device model of the player."""
-        return self._capabilities.get("ModelName", self._capabilities.get("Model"))
+        return self._capabilities.get(
+            "ModelName", self._capabilities.get("Model", FALLBACK_MODEL)
+        )
 
     @property
-    def max_sample_rate(self) -> int | None:
+    def max_sample_rate(self) -> int:
         """Return max sample rate supported by the player."""
-        return self._capabilities.get("MaxSampleRate")
+        return self._capabilities.get("MaxSampleRate", FALLBACK_SAMPLE_RATE)
 
     @property
     def supported_codecs(self) -> List[str]:
         """Return supported codecs by the player."""
-        return self._capabilities.get("SupportedCodecs", ["pcm"])
+        return self._capabilities.get("SupportedCodecs", FALLBACK_CODECS)
 
     @property
-    def firmware(self) -> str | None:
+    def firmware(self) -> str:
         """Return firmware version string for the player."""
-        return self._capabilities.get("Firmware")
+        return self._capabilities.get("Firmware", FALLLBACK_FIRMWARE)
 
     @property
     def device_address(self) -> str:
