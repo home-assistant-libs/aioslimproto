@@ -1,6 +1,7 @@
 """Helpers and utils."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 from typing import Any, Dict
@@ -37,11 +38,16 @@ def is_port_in_use(port: int) -> bool:
             return True
 
 
-def select_free_port(range_start: int, range_end: int) -> int:
+async def select_free_port(range_start: int, range_end: int) -> int:
     """Automatically find available port within range."""
-    for port in range(range_start, range_end):
-        if not is_port_in_use(port):
-            return port
+
+    def _select_free_port():
+        for port in range(range_start, range_end):
+            if not is_port_in_use(port):
+                return port
+        raise OSError("No free port available")
+
+    return await asyncio.get_running_loop().run_in_executor(None, _select_free_port)
 
 
 def parse_capabilities(helo_data: bytes) -> Dict[str, Any]:

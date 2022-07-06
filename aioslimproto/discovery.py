@@ -206,14 +206,12 @@ class DiscoveryProtocol:
             elif isinstance(dgram, TLVDiscoveryRequestDatagram):
                 resonsedata = self.build_tlv_response(dgram.data)
                 self.send_tlv_discovery_response(resonsedata, addr)
-        except Exception as exc:
-            LOGGER.error(
-                "Error occured while trying to parse a datagram from %s: %s",
+        except Exception:
+            LOGGER.exception(
+                "Error occured while trying to parse a datagram from %s - data: %s",
                 addr,
-                str(exc),
-                exc_info=exc,
+                data,
             )
-            LOGGER.error(data)
 
     def send_discovery_response(self, addr):
         """Send discovery response message."""

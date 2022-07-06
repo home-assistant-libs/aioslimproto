@@ -17,7 +17,6 @@ good-names=id,i,j,k,ex,Run,_,fp,T,ev
 # locally-disabled - it spams too much
 # duplicate-code - unavoidable
 # cyclic-import - doesn't test if both import on load
-# abstract-class-little-used - prevents from setting right foundation
 # unused-argument - generic callbacks and setup methods create a lot of warnings
 # too-many-* - are not enforced for the sake of readability
 # too-few-* - same as too-many-*
@@ -28,7 +27,6 @@ good-names=id,i,j,k,ex,Run,_,fp,T,ev
 # fixme - project is in development phase
 disable=
   format,
-  abstract-class-little-used,
   abstract-method,
   cyclic-import,
   duplicate-code,

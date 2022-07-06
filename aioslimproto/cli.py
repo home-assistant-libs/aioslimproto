@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, List, Optional, Union
 from aioslimproto.client import PlayerState
 from aioslimproto.const import EventType, SlimEvent
 from aioslimproto.errors import InvalidPlayer, SlimProtoException, UnsupportedCommand
+from aioslimproto.util import select_free_port
 
 if TYPE_CHECKING:
     from .client import SlimClient
@@ -91,10 +92,14 @@ class SlimProtoCLI:
     def __init__(
         self,
         server: "SlimServer",
-        cli_port: Optional[int] = 9090,
-        cli_port_json: Optional[int] = 3484,
+        cli_port: Optional[int] = 0,
+        cli_port_json: Optional[int] = 0,
     ) -> None:
-        """Initialize."""
+        """
+        Initialize Telnet and/or Json interface CLI.
+
+        Set port to None to disable the interface, set to 0 for auto select a free port.
+        """
         self.server = server
         self.cli_port = cli_port
         self.cli_port_json = cli_port_json
@@ -102,6 +107,11 @@ class SlimProtoCLI:
 
     async def start(self) -> List[asyncio.Server]:
         """Start running the server(s)."""
+        # if port is specified as 0, auto select a free port for the cli/json interface
+        if self.cli_port == 0:
+            self.cli_port = await select_free_port(9090, 9190)
+        if self.cli_port_json == 0:
+            self.cli_port_json = await select_free_port(self.cli_port + 1, 9190)
         servers: List[asyncio.Server] = []
         if self.cli_port is not None:
             self.logger.info(
