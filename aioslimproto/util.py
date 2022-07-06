@@ -28,6 +28,22 @@ def get_hostname():
     return socket.gethostname()
 
 
+def is_port_in_use(port: int) -> bool:
+    """Check if port is in use."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _sock:
+        try:
+            return _sock.connect_ex(("localhost", port)) == 0
+        except socket.gaierror:
+            return True
+
+
+def select_free_port(range_start: int, range_end: int) -> int:
+    """Automatically find available port within range."""
+    for port in range(range_start, range_end):
+        if not is_port_in_use(port):
+            return port
+
+
 def parse_capabilities(helo_data: bytes) -> Dict[str, Any]:
     """Try to parse device capabilities from HELO string."""
     # b"\x0c\x00\xb8'\xeb:D\xa2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
