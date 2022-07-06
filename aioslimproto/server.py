@@ -10,7 +10,6 @@ from .cli import SlimProtoCLI
 from .client import SlimClient
 from .const import EventType, SlimEvent
 from .discovery import start_discovery
-from .util import select_free_port
 
 EventCallBackType = Callable[[SlimEvent], None]
 EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
@@ -34,11 +33,6 @@ class SlimServer:
         cli_port_json: Same as cli port but it's newer JSON RPC equivalent.
         """
         self.logger = logging.getLogger(__name__)
-        # if port is specified as 0, auto select a free port for the cli/json interface
-        if cli_port == 0:
-            cli_port = select_free_port(9090, 9190)
-        if cli_port_json == 0:
-            cli_port_json = select_free_port(cli_port + 1, 9190)
         self.port = port
         self.cli = SlimProtoCLI(self, cli_port, cli_port_json)
         self._subscribers: List[EventSubscriptionType] = []
