@@ -49,15 +49,16 @@ class SlimServer:
         return self._players.get(player_id)
 
     async def start(self):
-        """Start running the server."""
+        """Start running the servers."""
         self.logger.info("Starting SLIMProto server on port %s", self.port)
         self._socket_servers = [
             # start slimproto server
             await asyncio.start_server(self._create_client, "0.0.0.0", self.port),
+            # setup cli
+            *await self.cli.start(),
             # setup discovery
             await start_discovery(self.port, self.cli.cli_port, self.cli.cli_port_json),
         ]
-        self._socket_servers += await self.cli.start()
 
     async def stop(self):
         """Stop running the server."""
