@@ -7,7 +7,7 @@ repos:
           - --safe
           - --quiet
   - repo: https://github.com/PyCQA/flake8
-    rev: 5.0.1
+    rev: 5.0.3
     hooks:
       - id: flake8
         exclude: ^examples/
