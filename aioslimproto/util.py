@@ -56,14 +56,21 @@ def parse_capabilities(helo_data: bytes) -> Dict[str, Any]:
     # x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00Model=squeezelite,
     # AccuratePlayPoints=1,HasDigitalOut=1,HasPolarityInversion=1,Firmware=v1.9.0-1121-pCP,
     # ModelName=SqueezeLite,MaxSampleRate=192000,aac,ogg,flc,aif,pcm,mp3"
+
+    # \x0c\x00\xac\xdeH\x00\x11"m\xca&\x15j\x1e9\xc3\x02zr\xdb\xf9\xf0\xda\xb5\x00\
+    # x00\x00\x00\x00\x00\x00\x00\x00\x00NLModel=squeezeplay,ModelName=SqueezePlay,
+    # Firmware=8.0.1-r1382,Balance=1,alc,aac,ogg,ogf,flc,aif,pcm,mp3,MaxSampleRate=384000,
+    # AccuratePlayPoints,ImmediateCrossfade,test,Rtmp=2
     params = {}
     try:
         info = helo_data[36:].decode()
         params = dict(parse_qsl(info.replace(",", "&")))
-        # try to parse codecs which are hidden in MaxSampleRate
-        if "MaxSampleRate=" in info:
-            codec_parts = info.split("MaxSampleRate=")[-1].split(",")[1:]
-            params["SupportedCodecs"] = codec_parts
+        # try to parse codecs which are hidden in the connection string
+        params["SupportedCodecs"] = [
+            codec
+            for codec in ("alc", "aac", "ogg", "ogf", "flc", "aif", "pcm", "mp3")
+            if codec in info
+        ]
     except Exception as exc:  # pylint: disable=broad-except
         # I have no idea if this message is the same for all device types
         # so a big try..except around it

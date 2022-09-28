@@ -86,6 +86,35 @@ class JSONRPCMessage(CLIMessage):
         )
 
 
+@dataclass
+class CometDMessage(CLIMessage):
+    """Representation of CometD RPC Message."""
+
+    id: Union[int, str]
+    method: str
+
+    @classmethod
+    def from_json(  # pylint: disable=redefined-builtin
+        cls, id: int, method: str, params: list
+    ) -> JSONRPCMessage:
+        """Parse a JSONRPCMessage from JSON."""
+        player_id = str(params[0])
+        command = str(params[1][0])
+        command_args = [str(v) for v in params[1][1:]]
+        command_str = " ".join([command] + command_args)
+        return cls(
+            id=id,
+            method=method,
+            player_id=player_id,
+            command=command,
+            command_args=command_args,
+            command_str=command_str,
+        )
+
+
+# [{"ext":{"mac":"ac:de:48:00:11:22","uuid":"6dca26156a1e39c3027a72dbf9f0dab5","rev":"8.0.1 r1382"},"supportedConnectionTypes":["streaming"],"version":"1.0","channel":"\\/meta\\/handshake"}]
+
+
 class SlimProtoCLI:
     """Basic implementation of CLI control for SlimProto players."""
 
@@ -228,11 +257,11 @@ class SlimProtoCLI:
                 if len(chunk) < CHUNK_SIZE:
                     break
             request = raw_request.decode("iso-8859-1")
-            head, body = request.split("\r\n\r\n")
+            head, body = request.split("\r\n\r\n", 1)
             headers = head.split("\r\n")
             method, path, _ = headers[0].split(" ")
 
-            if method != "POST" or path != "/jsonrpc.js":
+            if method != "POST" or path not in ("/jsonrpc.js", "/cometd"):
                 await self.send_json_response(writer, 405, "Method or path not allowed")
                 return
 
@@ -249,6 +278,8 @@ class SlimProtoCLI:
             # make sure the connection gets closed
             writer.close()
             await writer.wait_closed()
+
+    # async def _handle_cometd_message(self, message: )
 
     async def _handle_message(self, msg: CLIMessage) -> Any:
         """Handle message from one of the CLi interfaces."""

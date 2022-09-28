@@ -189,6 +189,9 @@ class DiscoveryProtocol:
             elif typ == "UUID":
                 # send server uuid
                 value = "aioslimproto"
+            elif typ == "JVID":
+                # send server JVID
+                value = "aioslimproto"
             else:
                 LOGGER.debug("Unexpected information request: %r", typ)
                 typ = None

@@ -328,9 +328,9 @@ class SlimClient:
                 "HTTPS stream requested but player does not support HTTPS, "
                 "trying HTTP instead but playback may fail."
             )
-            return await self.play_url(
-                url.replace("https", "http"), crossfade, mime_type, send_flush
-            )
+            self._current_url = url.replace("https", "http")
+            scheme = "http"
+            port = 80
 
         if mime_type is None:
             # try to get the audio format from file extension
@@ -501,7 +501,7 @@ class SlimClient:
 
     def _process_stat_aude(self, data):
         """Process incoming stat AUDe message (power level and mute)."""
-        (spdif_enable, dac_enable) = struct.unpack("2B", data[:4])
+        (spdif_enable, dac_enable) = struct.unpack("2B", data[:2])
         powered = spdif_enable or dac_enable
         self._powered = powered
         self._muted = not powered
@@ -575,9 +575,7 @@ class SlimClient:
             elapsed_seconds,
             voltage,
             elapsed_milliseconds,
-            timestamp,
-            error_code,
-        ) = struct.unpack("!BBBLLLLHLLLLHLLH", data)
+        ) = struct.unpack("!BBBLLLLHLLLLHL", data[:43])
 
         self._elapsed_milliseconds = elapsed_milliseconds
         # formally we should use the timestamp field to calculate roundtrip time
@@ -609,7 +607,7 @@ class SlimClient:
         """Process incoming stat STMn message: player couldn't decode stream."""
         # pylint: disable=unused-argument
         self.logger.debug("STMn received - player couldn't decode stream.")
-        self.callback(EventType.PLAYER_DECODER_ERROR)
+        self.callback(EventType.PLAYER_DECODER_ERROR, self)
 
     async def _process_resp(self, data):
         """Process incoming RESP message: Response received at player."""
@@ -620,7 +618,10 @@ class SlimClient:
             # handle redirect
             location = headers["location"]
             self.logger.debug("Received redirect to %s", location)
-            await self.play_url(location)
+            if location.startswith("https") and not self._capabilities.get("CanHTTPS"):
+                self.logger.error("Server requires HTTPS.")
+            else:
+                await self.play_url(location)
             return
 
         if "content-type" in headers:

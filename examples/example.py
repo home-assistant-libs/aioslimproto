@@ -30,9 +30,7 @@ async def main():
             player = server.get_player(evt.player_id)
             await player.power(True)
             await player.volume_set(100)
-            # await player.play_url(
-            #     "http://playerservices.streamtheworld.com/api/livestream-redirect/TLPSTR13AAC.aac"
-            # )
+            await player.play_url("http://icecast.omroep.nl/radio2-sb-mp3")
 
     server.subscribe(on_event)
 
