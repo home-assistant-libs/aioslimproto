@@ -25,7 +25,7 @@ repos:
         additional_dependencies: [types-all]
         exclude: ^examples/
   - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.2.3
+    rev: 6.3.0
     hooks:
       - id: pydocstyle
         exclude: ^examples/|^.venv/|^.vscode/
