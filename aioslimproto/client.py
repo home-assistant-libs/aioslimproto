@@ -261,7 +261,7 @@ class SlimClient:
 
     async def power(self, powered: bool = True):
         """Send power command to player."""
-        # power is not supported so abuse mute instead
+        # mute is the same as power
         if not powered:
             await self.stop()
         power_int = 1 if powered else 0

@@ -17,7 +17,9 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+import time
 from typing import TYPE_CHECKING, Any, List, Optional, Union
+from uuid import uuid4
 
 from aioslimproto.client import PlayerState
 from aioslimproto.const import EventType, SlimEvent
@@ -84,35 +86,6 @@ class JSONRPCMessage(CLIMessage):
             command_args=command_args,
             command_str=command_str,
         )
-
-
-@dataclass
-class CometDMessage(CLIMessage):
-    """Representation of CometD RPC Message."""
-
-    id: Union[int, str]
-    method: str
-
-    @classmethod
-    def from_json(  # pylint: disable=redefined-builtin
-        cls, id: int, method: str, params: list
-    ) -> JSONRPCMessage:
-        """Parse a JSONRPCMessage from JSON."""
-        player_id = str(params[0])
-        command = str(params[1][0])
-        command_args = [str(v) for v in params[1][1:]]
-        command_str = " ".join([command] + command_args)
-        return cls(
-            id=id,
-            method=method,
-            player_id=player_id,
-            command=command,
-            command_args=command_args,
-            command_str=command_str,
-        )
-
-
-# [{"ext":{"mac":"ac:de:48:00:11:22","uuid":"6dca26156a1e39c3027a72dbf9f0dab5","rev":"8.0.1 r1382"},"supportedConnectionTypes":["streaming"],"version":"1.0","channel":"\\/meta\\/handshake"}]
 
 
 class SlimProtoCLI:
@@ -227,6 +200,10 @@ class SlimProtoCLI:
         try:
             while True:
                 raw_request = await reader.readline()
+                print()
+                print("TELNET")
+                print(raw_request)
+                print()
                 raw_request = raw_request.strip().decode("iso-8859-1")
                 cli_msg = CLIMessage.from_string(raw_request)
                 result = await self._handle_message(cli_msg)
@@ -240,6 +217,8 @@ class SlimProtoCLI:
         except SlimProtoException:
             err = f"Unhandled request: {raw_request}\n"
             writer.write(err.encode("iso-8859-1"))
+            await writer.drain()
+            self.logger.debug(err)
         finally:
             # make sure the connection gets closed
             writer.close()
@@ -260,26 +239,99 @@ class SlimProtoCLI:
             head, body = request.split("\r\n\r\n", 1)
             headers = head.split("\r\n")
             method, path, _ = headers[0].split(" ")
+            self.logger.debug("Client request on JSON RPC: %s/%s", method, path)
 
-            if method != "POST" or path not in ("/jsonrpc.js", "/cometd"):
-                await self.send_json_response(writer, 405, "Method or path not allowed")
+            # parse json from body
+            json_msg = json.loads(body)
+
+            if path == "jsonrpc.js":
+                # regular json rpc request
+                print()
+                print("JSON MESSAGE")
+                print(json_msg)
+                print()
+                rpc_msg = JSONRPCMessage.from_json(**json_msg)
+                result = await self._handle_message(rpc_msg)
+                await self.send_json_response(
+                    writer, data={"result": result, "id": rpc_msg.id}
+                )
                 return
 
-            rpc_msg = JSONRPCMessage.from_json(**json.loads(body))
-            result = await self._handle_message(rpc_msg)
-            await self.send_json_response(
-                writer, data={"result": result, "id": rpc_msg.id}
-            )
+            if path == "/cometd":
+                print()
+                print("COMETD MESSAGE")
+                print(json_msg)
+                print()
+                # forward cometd to seperate handler as it is slightly more involved
+                await self._handle_cometd_request(json_msg, writer)
+                return
+
+            # deny all other paths
+            await self.send_json_response(writer, 405, "Method or path not allowed")
+
 
         except SlimProtoException as exc:
+            self.logger.exception(exc)
             await self.send_json_response(writer, 501, str(exc))
 
         finally:
             # make sure the connection gets closed
             writer.close()
             await writer.wait_closed()
+            self.logger.info("connection closed")
 
-    # async def _handle_cometd_message(self, message: )
+    async def _handle_cometd_request(
+        self,
+        json_msg: list(dict[str, Any]),
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        """Handle CometD request on the json CLI."""
+        # cometd message is an array of commands/messages
+        print(json_msg)
+
+        channel = json_msg.get("channel")
+        msgid = json_msg.get("id", "")
+        clientid = json_msg.get("clientId", uuid4().hex)
+        send_headers = False
+
+        response = {
+            "id": msgid,
+            "channel": channel,
+            "clientId": clientid,
+            "successful": True,
+            "timestamp": str(int(time.time())),
+            "advice": {"interval": 5000},
+        }
+
+        if channel == "/meta/handshake":
+            # handshake message, send response and exit
+            response["version"] = "1.0"
+            response["supportedConnectionTypes"] = ["streaming"]
+            response["advice"]["reconnect"] = "retry"
+            response["advice"]["interval"] = 0
+            response["advice"]["timeout"] = 60000
+            await self.send_json_response(writer, data=[response])
+
+        if channel in ("/meta/connect", "/meta/reconnect"):
+            # (re)connect is first message, send headers and response
+            await self.send_json_response(
+                writer, data=[response], headers={"Transfer-Encoding": "chunked"}
+            )
+            return
+
+        if channel == "/meta/subscribe":
+            response["subscription"] = json_msg["subscription"]
+
+        # all other messages: just echo
+        await self.send_json_response(writer, data=[response], skip_headers=True)
+
+        # TODO: send events
+        await asyncio.sleep(120)
+
+        # def on_event(evt: SlimEvent):
+        #     pass
+
+        # unsub = self.server.subscribe(on_event)
 
     async def _handle_message(self, msg: CLIMessage) -> Any:
         """Handle message from one of the CLi interfaces."""
@@ -320,16 +372,27 @@ class SlimProtoCLI:
         writer: asyncio.StreamWriter,
         status: int = 200,
         status_text: str = "OK",
-        data: dict = None,
+        data: dict | None = None,
+        headers: dict | None = None,
+        skip_headers: bool = False,
     ) -> str:
         """Build HTTP response from data."""
         content_type = "json" if data is not None else "text"
-        response = (
-            f"HTTP/1.1 {status} {status_text}\r\n"
-            f"Content-Type: text/{content_type}; charset=UTF-8\r\n"
-            "Content-Encoding: UTF-8\r\n"
-            "Connection: closed\r\n\r\n"
-        )
+        if not headers:
+            headers = {}
+        headers = {
+            "Content-Type": f"text/{content_type};charset=UTF-8",
+            "Content-Encoding": "UTF-8",
+            "Connection": "closed",
+            **headers,
+        }
+        if skip_headers:
+            response = ""
+        else:
+            response = f"HTTP/1.1 {status} {status_text}\r\n"
+            for key, value in headers.items():
+                response += f"{key}: {value}\r\n"
+            response += "\r\n"
         if data is not None:
             response += json.dumps(data)
         writer.write(response.encode("iso-8859-1"))
