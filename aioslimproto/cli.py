@@ -143,9 +143,11 @@ class JSONRPCMessage(CLIMessage):
         cls, cometd_msg: dict
     ) -> JSONRPCMessage:
         """Parse a JSONRPCMessage from JSON."""
-        return cls.from_json(id=cometd_msg.get("id", 0),
-            method= cometd_msg["channel"],
-            params= cometd_msg["data"]["request"])
+        return cls.from_json(
+            id=cometd_msg.get("id", 0),
+            method=cometd_msg["channel"],
+            params=cometd_msg["data"]["request"],
+        )
 
 
 class SlimProtoCLI:
@@ -167,6 +169,7 @@ class SlimProtoCLI:
         self.cli_port_json = cli_port_json
         self.logger = server.logger.getChild("jsonrpc")
         self._cometd_clients: dict[str, asyncio.Queue[CometDResponse]] = {}
+        self._player_map: dict[str, str] = {}
 
     async def start(self) -> list[asyncio.Server]:
         """Start running the server(s)."""
@@ -307,6 +310,11 @@ class SlimProtoCLI:
 
     async def handle_menu(self, player: SlimClient | None, args: list[str]):
         return {
+            "item_loop": [],
+            "offset": 0,
+            "count": 0,
+        }
+        return {
             "item_loop": [
                 {
                     "node": "home",
@@ -332,6 +340,58 @@ class SlimProtoCLI:
             "count": 2,
         }
 
+    async def handle_status(self, player: SlimClient | None, args: list[str]):
+        """Handle request for Player status."""
+        return {
+            "base": {"actions": {}},
+            "time": player.elapsed_seconds,
+            "playlist_timestamp": player.elapsed_seconds,
+            "playlist_cur_index": "0",
+            "playlist mode": "off",
+            "mixer volume": player.volume_level,
+            "alarm_timeout_seconds": 3600,
+            "count": 1,
+            "alarm_version": 2,
+            "preset_data": [],
+            "seq_no": 0,
+            "remoteMeta": {},
+            "playlist_name": "aioslimproto",
+            "power": int(player.powered),
+            "player_ip": player.device_address,
+            "rate": 1,
+            "player_name": player.name,
+            "duration": 0,
+            "remote": 0,
+            "playlist_modified": 0,
+            "item_loop": [
+                {
+                    "album": "",
+                    "text": "aioslimproto",
+                    "artist": "",
+                    "icon": "",
+                    "track": "aioslimproto",
+                    "params": {"track_id": -94737610224352, "playlist_index": 0},
+                    "style": "itemplay",
+                    "trackType": "radio",
+                },
+            ],
+            "playlist shuffle": 0,
+            "alarm_next": 0,
+            "digital_volume_control": 1,
+            "playlist_id": 0,
+            "alarm_snooze_seconds": 0,
+            "can_seek": 0,
+            "player_connected": 1,
+            "playlist_tracks": 1,
+            "current_title": None,
+            "mode": "play" if player.state == PlayerState.PLAYING else "pause",
+            "preset_loop": [],
+            "alarm_state": "none",
+            "offset": "-",
+            "playlist repeat": 0,
+            "signalstrength": 0,
+        }
+
     async def _handle_telnet_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
@@ -339,10 +399,6 @@ class SlimProtoCLI:
         try:
             while True:
                 raw_request = await reader.readline()
-                print()
-                print("TELNET")
-                print(raw_request)
-                print()
                 raw_request = raw_request.strip().decode("iso-8859-1")
                 cli_msg = CLIMessage.from_string(raw_request)
                 result = await self._handle_cli_message(cli_msg)
@@ -360,8 +416,9 @@ class SlimProtoCLI:
             self.logger.debug(err)
         finally:
             # make sure the connection gets closed
-            writer.close()
-            await writer.wait_closed()
+            if not writer.is_closing():
+                writer.close()
+                await writer.wait_closed()
 
     async def _handle_json_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -374,7 +431,7 @@ class SlimProtoCLI:
                 raw_request += chunk
                 if len(chunk) < CHUNK_SIZE:
                     break
-            request = raw_request.decode("iso-8859-1")
+            request = raw_request.decode("UTF-8")
             head, body = request.split("\r\n\r\n", 1)
             headers = head.split("\r\n")
             method, path, _ = headers[0].split(" ")
@@ -394,7 +451,10 @@ class SlimProtoCLI:
 
             # cometd request (used by jive interface)
             if path == "/cometd":
-                json_msg = json.loads(body)
+                try:
+                    json_msg = json.loads(body)
+                except json.JSONDecodeError:
+                    return
                 # forward cometd to seperate handler as it is slightly more involved
                 await self._handle_cometd_client(json_msg, writer)
                 return
@@ -417,16 +477,25 @@ class SlimProtoCLI:
         json_msg: list(dict[str, Any]),
         writer: asyncio.StreamWriter,
     ) -> None:
-        """Handle CometD request on the json CLI."""
+        """
+        Handle CometD request on the json CLI.
+
+        https://github.com/Logitech/slimserver/blob/public/8.4/Slim/Web/Cometd.pm
+        """
         responses = []
         is_subscribe_connection = False
         clientid = ""
+
         # cometd message is an array of commands/messages
         for cometd_msg in json_msg:
 
             channel = cometd_msg.get("channel")
+            # try to figure out clientid
             if not clientid and cometd_msg.get("clientId"):
                 clientid = cometd_msg["clientId"]
+            elif not clientid and cometd_msg.get("data", {}).get("response"):
+                clientid = cometd_msg["data"]["response"].split("/")[1]
+            # messageid is optional but if provided we must pass it along
             msgid = cometd_msg.get("id", "")
             response = {
                 "channel": channel,
@@ -434,6 +503,7 @@ class SlimProtoCLI:
                 "id": msgid,
                 "clientId": clientid,
             }
+            self._cometd_clients.setdefault(clientid, asyncio.Queue())
 
             if channel == "/meta/handshake":
                 # handshake message
@@ -449,7 +519,6 @@ class SlimProtoCLI:
             elif channel in ("/meta/connect", "/meta/reconnect"):
                 # (re)connect message
                 self.logger.debug("CometD Client (re-)connected: %s", clientid)
-                self._cometd_clients.setdefault(clientid, asyncio.Queue())
                 response["timestamp"] = time.strftime(
                     "%a, %d %b %Y %H:%M:%S %Z", time.gmtime()
                 )
@@ -461,22 +530,24 @@ class SlimProtoCLI:
 
             elif channel in ("/slim/request", "/slim/subscribe"):
                 # async request (similar to json rpc call)
-                if not clientid:
-                    clientid = cometd_msg["data"]["response"].split("/")[1]
                 rpc_msg = JSONRPCMessage.from_cometd(cometd_msg)
                 result = await self._handle_cli_message(rpc_msg)
+                if rpc_msg.player_id:
+                    # create mapping table which client is subscribing to which player
+                    self._player_map[clientid] = rpc_msg.player_id
+
                 # the result is posted on the client queue
                 await self._cometd_clients[clientid].put(
-                {
-                    "channel": cometd_msg["data"]["response"],
-                    "id": msgid,
-                    "data": result,
-                    "ext": {"priority": ""}
-                }
-            )
+                    {
+                        "channel": cometd_msg["data"]["response"],
+                        "id": msgid,
+                        "data": result,
+                        "ext": {"priority": ""},
+                    }
+                )
 
             else:
-                print("UNHANDLED MESSAGE", cometd_msg)
+                self.logger.warning("Unhandled CometD channel %s", channel)
 
             # always reply with the (default) response to every message
             responses.append(response)
@@ -486,39 +557,50 @@ class SlimProtoCLI:
             await self.send_json_response(writer, data=responses)
             return
 
-        # the subscription connection is kept open and events are streamed to the client
-        # send headers
+        # send headers only
         await self.send_status_response(
             writer, 200, headers={"Transfer-Encoding": "chunked"}
         )
+        # the subscription connection is kept open and events are streamed to the client
         data = json.dumps(responses)
         writer.write(
             f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode("iso-8859-1")
         )
         await writer.drain()
 
+        # as some sort of heartbeat, the server- and playerstatus is sent every 30 seconds
         loop = asyncio.get_running_loop()
 
-        async def send_serverstatus():
+        async def send_status():
             if clientid not in self._cometd_clients:
                 return
+
+            player = self.server.get_player(self._player_map.get(clientid))
             await self._cometd_clients[clientid].put(
                 {
                     "channel": f"/{clientid}/slim/serverstatus",
                     "id": "1",
-                    "data": await self.handle_serverstatus(None, []),
+                    "data": await self.handle_serverstatus(player, []),
                 }
             )
+            if player is not None:
+                await self._cometd_clients[clientid].put(
+                    {
+                        "channel": f"/{clientid}/slim/status",
+                        "id": "1",
+                        "data": await self.handle_status(player, []),
+                    }
+                )
 
             # reschedule self
-            loop.call_later(30, loop.create_task, send_serverstatus())
+            loop.call_later(30, loop.create_task, send_status())
 
-        loop.create_task(send_serverstatus())
+        loop.create_task(send_status())
 
         # keep delivering messages to the client until it disconnects
         try:
             # keep sending messages/events from the client's queue
-            while not writer.is_closing():
+            while clientid in self._cometd_clients and not writer.is_closing():
                 msg = await self._cometd_clients[clientid].get()
                 # make sure we always send an array of messages
                 data = json.dumps([msg])
@@ -567,6 +649,7 @@ class SlimProtoCLI:
             "Pragma": "no-cache",
             "Content-Type": "application/json",
             "Expires": "-1",
+            "Connection": "keep-alive",
             **headers,
         }
         response = f"HTTP/1.1 {status} {status_text}\r\n"
