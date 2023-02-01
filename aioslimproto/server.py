@@ -6,9 +6,11 @@ import logging
 from types import TracebackType
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
+from aioslimproto.util import select_free_port
+
 from .cli import SlimProtoCLI
 from .client import SlimClient
-from .const import EventType, SlimEvent
+from .const import DEFAULT_SLIMPROTO_PORT, EventType, SlimEvent
 from .discovery import start_discovery
 
 EventCallBackType = Callable[[SlimEvent], None]
@@ -20,14 +22,14 @@ class SlimServer:
 
     def __init__(
         self,
-        port: int = 3483,
+        port: int = 0,
         cli_port: Optional[int] = None,
         cli_port_json: Optional[int] = 0,
     ) -> None:
         """
         Initialize SlimServer instance.
 
-        control_port: The TCP port for the slimproto communication, default is 3483.
+        control_port: The TCP port for the slimproto communication, 0 for autoselect.
         cli_port: Optionally start a simple Telnet CLI server on this port for compatability
         with players relying on the server providing this feature. None to disable, 0 for autoselect.
         cli_port_json: Same as cli port but it's newer JSON RPC equivalent.
@@ -50,6 +52,10 @@ class SlimServer:
 
     async def start(self):
         """Start running the servers."""
+        if self.port == 0:
+            self.port = await select_free_port(
+                DEFAULT_SLIMPROTO_PORT, DEFAULT_SLIMPROTO_PORT + 200
+            )
         self.logger.info("Starting SLIMProto server on port %s", self.port)
         self._socket_servers = [
             # start slimproto server

@@ -26,3 +26,6 @@ class SlimEvent:
     type: EventType
     player_id: str
     data: Optional[Dict[str, Any]] = None
+
+
+DEFAULT_SLIMPROTO_PORT = 3483

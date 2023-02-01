@@ -171,10 +171,10 @@ class DiscoveryProtocol:
                 # send full host name - no truncation
                 value = get_hostname()
             elif typ == "IPAD":
-                # send ipaddress as a string only if it is set
-                value = get_ip()
+                # send ipaddress:port as a string only if it is set
+                value = f"{get_ip()}:{self.control_port}"
                 # :todo: IPv6
-                if value == "0.0.0.0":
+                if value.startswith("0.0.0.0"):
                     # do not send back an ip address
                     typ = None
             elif typ == "JSON" and self.cli_port_json is not None:
