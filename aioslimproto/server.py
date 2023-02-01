@@ -21,7 +21,7 @@ class SlimServer:
     def __init__(
         self,
         port: int = 3483,
-        cli_port: Optional[int] = 0,
+        cli_port: Optional[int] = None,
         cli_port_json: Optional[int] = 0,
     ) -> None:
         """
