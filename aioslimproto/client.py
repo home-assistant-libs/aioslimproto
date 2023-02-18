@@ -43,11 +43,17 @@ class PlayerState(Enum):
     PLAYING = "playing"
     STOPPED = "stopped"
     PAUSED = "paused"
-    # the below states will only exist when the stream is manually controlled
-    # the default play_media uses auto start which will let the player itself
-    #  auto start and handle buffer
     BUFFERING = "buffering"
-    BUFFER_READY = "buffer_ready"
+
+
+class TransitionType(Enum):
+    """Transition type enum."""
+
+    NONE = b"0"
+    CROSSFADE = b"1"
+    FADE_IN = b"2"
+    FADE_OUT = b"3"
+    FADE_IN_OUT = b"4"
 
 
 PCM_SAMPLE_SIZE = {
@@ -97,6 +103,7 @@ CODEC_MAPPING = {
     "audio/wav": "pcm",
     "audio/x-wav": "pcm",
     "audio/dsf": "dsf",
+    "audio/pcm,": "pcm",
 }
 
 FORMAT_BYTE = {
@@ -156,12 +163,13 @@ class SlimClient:
         self._state = PlayerState.STOPPED
         self._last_timestamp: float = 0
         self._elapsed_milliseconds: float = 0
+        self._next_url: str | None = None
+        self._next_metadata: Metadata | None = None
         self._connected: bool = False
         self._last_heartbeat = (0, 0)
         self._packet_latency = deque(maxlen=10)
         self._reader_task = create_task(self._socket_reader())
-        # schedule sending first heartbeat
-        create_task(self._send_heartbeat())
+        self._send_heartbeat()
 
     def disconnect(self) -> None:
         """Disconnect socket client."""
@@ -313,16 +321,20 @@ class SlimClient:
         url: str,
         mime_type: str | None = None,
         metadata: Metadata | None = None,
+        send_flush: bool = True,
+        transition: TransitionType = TransitionType.NONE,
+        transition_duration: int = 0,
     ) -> None:
         """Request player to start playing a single url."""
         self.logger.debug("play url: %s", url)
         if not url.startswith("http"):
             raise UnsupportedContentType(f"Invalid URL: {url}")
-        # flush buffers before playback
-        if self.state != PlayerState.STOPPED:
+
+        if send_flush:
+            # flush buffers before playback
             await self.send_strm(b"f", autostart=b"0")
-        self.current_url = url
-        self.current_metadata = metadata
+        self._next_url = url
+        self._next_metadata = metadata
         # power on if we're not already powered
         if not self._powered:
             await self.power(True)
@@ -389,15 +401,23 @@ class SlimClient:
             server_ip=ipaddr_b,
             threshold=200,
             output_threshold=10,
+            trans_duration=transition_duration,
+            trans_type=transition.value,
             flags=0x20 if scheme == "https" else 0x00,
             httpreq=httpreq,
         )
 
-    async def _send_heartbeat(self) -> None:
+    def _send_heartbeat(self) -> None:
         """Send (periodic) heartbeat message to player."""
-        heartbeat_id = self._last_heartbeat[0] + 1
-        self._last_heartbeat = (heartbeat_id, time.time())
-        await self.send_strm(b"t", flags=0, replay_gain=heartbeat_id)
+        if not self._connected:
+            return
+
+        async def async_send_heartbeat():
+            heartbeat_id = self._last_heartbeat[0] + 1
+            self._last_heartbeat = (heartbeat_id, time.time())
+            await self.send_strm(b"t", flags=0, replay_gain=heartbeat_id)
+
+        asyncio.create_task(async_send_heartbeat())
 
     async def _send_frame(self, command: bytes, data: bytes) -> None:
         """Send command to Squeeze player."""
@@ -581,6 +601,10 @@ class SlimClient:
         """Process incoming stat STMs message: Playback of new track has started."""
         self.logger.debug("STMs received - playback of new track has started")
         self._state = PlayerState.PLAYING
+        self.current_metadata = self._next_metadata
+        self.current_url = self._next_url
+        self._next_metadata = None
+        self._next_url = None
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stmt(self, data: bytes) -> None:
@@ -604,18 +628,21 @@ class SlimClient:
             server_heartbeat,
         ) = struct.unpack("!BBBLLLLHLLLLHLL", data[:47])
 
-        # handle heartbeat response (used to measure roundtrip/latency)
+        # handle heartbeat response (used to measure roundtrip/latency and ping/pong)
         if server_heartbeat == self._last_heartbeat[0]:
             # consider latency as half of the roundtrip
             latency = (time.time() - self._last_heartbeat[1]) / 2
             self._packet_latency.append(latency)
-            # schedule new heartbeat
-            # if playback busy we want high resolution playpoints
+            # schedule heartbeat
+            # if playback busy we want high accuracy
             # but otherwise every 5 seconds is good enough
-            heartbeat_delay = 5 if not self.powered else 0.1
-            asyncio.get_event_loop().call_later(
-                heartbeat_delay, asyncio.create_task, self._send_heartbeat()
-            )
+            if self.state == PlayerState.PLAYING:
+                heartbeat_delay = 0.1
+            elif self.powered:
+                heartbeat_delay = 1
+            else:
+                heartbeat_delay = 5
+            asyncio.get_event_loop().call_later(heartbeat_delay, self._send_heartbeat)
 
         self._elapsed_milliseconds = elapsed_milliseconds
         # consider latency when calculating the elapsed time
@@ -630,13 +657,16 @@ class SlimClient:
         # invalidate url/metadata
         self.current_metadata = None
         self.current_url = None
+        self._next_metadata = None
+        self._next_url = None
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stml(self, data: bytes) -> None:
         """Process incoming stat STMl message: Buffer threshold reached."""
         # pylint: disable=unused-argument
         self.logger.debug("STMl received - Buffer threshold reached.")
-        self._state = PlayerState.BUFFER_READY
+        # this is only used when autostart < 2 on strm-s commands
+        # send an event anyway for lib consumers to handle
         self.callback(EventType.PLAYER_BUFFER_READY, self)
 
     def _process_stat_stmn(self, data: bytes) -> None:
