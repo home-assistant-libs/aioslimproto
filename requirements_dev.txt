@@ -4,7 +4,7 @@ flake8==6.0.0
 mypy==1.0.1
 pydocstyle==6.3.0
 pylint==2.16.2
-pytest==7.2.1
+pytest==7.2.2
 pytest-cov==4.0.0
 pytest-timeout==2.1.0
 pre-commit==3.1.0
