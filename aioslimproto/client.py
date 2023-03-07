@@ -12,9 +12,9 @@ import socket
 from collections import deque
 import struct
 import time
-from asyncio import StreamReader, StreamWriter, Task, create_task
+from asyncio import StreamReader, StreamWriter, create_task
 from enum import Enum
-from typing import Callable, Dict, List, Optional, TypedDict
+from typing import Callable, Dict, List, TypedDict
 from urllib.parse import parse_qsl, urlparse
 
 from .const import EventType
@@ -409,8 +409,6 @@ class SlimClient:
 
     def _send_heartbeat(self) -> None:
         """Send (periodic) heartbeat message to player."""
-        if not self._connected:
-            return
 
         async def async_send_heartbeat():
             heartbeat_id = self._last_heartbeat[0] + 1

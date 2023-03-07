@@ -19,11 +19,10 @@ import json
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict
-from uuid import uuid1, uuid4
+from uuid import uuid1
 
 from aioslimproto.client import PlayerState
-from aioslimproto.const import EventType, SlimEvent
-from aioslimproto.errors import InvalidPlayer, SlimProtoException, UnsupportedCommand
+from aioslimproto.errors import SlimProtoException
 from aioslimproto.util import select_free_port
 
 if TYPE_CHECKING:
@@ -167,7 +166,7 @@ class SlimProtoCLI:
         self.server = server
         self.cli_port = cli_port
         self.cli_port_json = cli_port_json
-        self.logger = server.logger.getChild("jsonrpc")
+        self.logger = server.logger.getChild("cli")
         self._cometd_clients: dict[str, asyncio.Queue[CometDResponse]] = {}
         self._player_map: dict[str, str] = {}
 
@@ -315,27 +314,7 @@ class SlimProtoCLI:
             "count": 0,
         }
         return {
-            "item_loop": [
-                {
-                    "node": "home",
-                    "weight": 11,
-                    "id": "myMusic",
-                    "isANode": 1,
-                    "text": "My Music!!!",
-                },
-                {
-                    "weight": 100,
-                    "node": "home",
-                    "text": "Favoriteszz",
-                    "id": "favorites",
-                    "actions": {
-                        "go": {
-                            "params": {"menu": "favorites"},
-                            "cmd": ["favorites", "items"],
-                        }
-                    },
-                },
-            ],
+            "item_loop": [],
             "offset": 0,
             "count": 2,
         }
@@ -364,16 +343,6 @@ class SlimProtoCLI:
             "remote": 0,
             "playlist_modified": 0,
             "item_loop": [
-                {
-                    "album": "",
-                    "text": "aioslimproto",
-                    "artist": "",
-                    "icon": "",
-                    "track": "aioslimproto",
-                    "params": {"track_id": -94737610224352, "playlist_index": 0},
-                    "style": "itemplay",
-                    "trackType": "radio",
-                },
             ],
             "playlist shuffle": 0,
             "alarm_next": 0,
