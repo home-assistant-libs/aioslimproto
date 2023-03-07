@@ -171,7 +171,6 @@ class DiscoveryProtocol:
                 # send full host name - no truncation
                 value = get_hostname()
             elif typ == "IPAD":
-                # send ipaddress as a string only if it is set
                 value = get_ip()
                 # :todo: IPv6
                 if value == "0.0.0.0":
@@ -188,6 +187,9 @@ class DiscoveryProtocol:
                 value = "7.9"
             elif typ == "UUID":
                 # send server uuid
+                value = "aioslimproto"
+            elif typ == "JVID":
+                # send server JVID
                 value = "aioslimproto"
             else:
                 LOGGER.debug("Unexpected information request: %r", typ)

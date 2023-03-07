@@ -11,9 +11,10 @@ import logging
 import socket
 import struct
 import time
-from asyncio import StreamReader, StreamWriter, Task, create_task
+from asyncio import StreamReader, StreamWriter, create_task
+from collections import deque
 from enum import Enum
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, TypedDict
 from urllib.parse import parse_qsl, urlparse
 
 from .const import EventType
@@ -40,8 +41,19 @@ class PlayerState(Enum):
     """Enum with the possible player states."""
 
     PLAYING = "playing"
-    IDLE = "idle"
+    STOPPED = "stopped"
     PAUSED = "paused"
+    BUFFERING = "buffering"
+
+
+class TransitionType(Enum):
+    """Transition type enum."""
+
+    NONE = b"0"
+    CROSSFADE = b"1"
+    FADE_IN = b"2"
+    FADE_OUT = b"3"
+    FADE_IN_OUT = b"4"
 
 
 PCM_SAMPLE_SIZE = {
@@ -91,6 +103,7 @@ CODEC_MAPPING = {
     "audio/wav": "pcm",
     "audio/x-wav": "pcm",
     "audio/dsf": "dsf",
+    "audio/pcm,": "pcm",
 }
 
 FORMAT_BYTE = {
@@ -114,6 +127,16 @@ FALLBACK_CODECS = ["pcm"]
 FALLBACK_SAMPLE_RATE = 96000
 
 
+class Metadata(TypedDict):
+    """Optional metadata for playback."""
+
+    item_id: str  # optional
+    artist: str  # optional
+    album: str  # optional
+    title: str  # optional
+    image_url: str  # optional
+
+
 class SlimClient:
     """SLIMProto socket client."""
 
@@ -126,6 +149,8 @@ class SlimClient:
         """Initialize the socket client."""
         self.callback = callback
         self.logger = logging.getLogger(__name__)
+        self.current_url: str | None = None
+        self.current_metadata: Metadata | None = None
         self._reader = reader
         self._writer = writer
         self._player_id: str = ""
@@ -135,23 +160,22 @@ class SlimClient:
         self._volume_control = PySqueezeVolume()
         self._powered: bool = False
         self._muted: bool = False
-        self._state = PlayerState.IDLE
+        self._state = PlayerState.STOPPED
         self._last_timestamp: float = 0
         self._elapsed_milliseconds: float = 0
-        self._last_report: int = 0
-        self._current_url: str = ""
+        self._next_url: str | None = None
+        self._next_metadata: Metadata | None = None
         self._connected: bool = False
-        self._tasks: List[Task] = [
-            create_task(self._socket_reader()),
-            create_task(self._send_heartbeat()),
-        ]
+        self._last_heartbeat = (0, 0)
+        self._packet_latency = deque(maxlen=10)
+        self._reader_task = create_task(self._socket_reader())
+        self._send_heartbeat()
 
     def disconnect(self) -> None:
         """Disconnect socket client."""
-        for task in self._tasks:
-            if not task.cancelled():
-                task.cancel()
-        self._tasks = []
+        if self._reader_task and not self._reader_task.cancelled():
+            self._reader_task.cancel()
+
         if self._connected:
             self._connected = False
             if self._writer.can_write_eof():
@@ -237,31 +261,36 @@ class SlimClient:
     @property
     def elapsed_milliseconds(self) -> int:
         """Return (realtime) elapsed time of current playing media in milliseconds."""
-        return self._elapsed_milliseconds + (
+        if not self.state == PlayerState.PLAYING:
+            return self._elapsed_milliseconds
+        # if the player is playing we return a very accurate timestamp
+        # which in turn can be used by consumers to sync players etc.
+        return self._elapsed_milliseconds + int(
             (time.time() - self._last_timestamp) * 1000
         )
 
     @property
-    def current_url(self):
-        """Return uri of currently loaded track."""
-        return self._current_url
+    def packet_latency(self) -> float:
+        """Return (averaged) packet latency in seconds."""
+        if not self._packet_latency:
+            return 5  # return a safe default of 5ms
+        return sum(self._packet_latency) / len(self._packet_latency)
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Send stop command to player."""
-        self._current_url = ""
         await self.send_strm(b"q")
 
-    async def play(self):
+    async def play(self) -> None:
         """Send play/unpause command to player."""
         await self.send_strm(b"u")
 
-    async def pause(self):
+    async def pause(self) -> None:
         """Send pause command to player."""
         await self.send_strm(b"p")
 
-    async def power(self, powered: bool = True):
+    async def power(self, powered: bool = True) -> None:
         """Send power command to player."""
-        # power is not supported so abuse mute instead
+        # mute is the same as power
         if not powered:
             await self.stop()
         power_int = 1 if powered else 0
@@ -269,7 +298,7 @@ class SlimClient:
         self._powered = powered
         self.callback(EventType.PLAYER_UPDATED, self)
 
-    async def volume_set(self, volume_level: int):
+    async def volume_set(self, volume_level: int) -> None:
         """Send new volume level command to player."""
         self._volume_control.volume = volume_level
         old_gain = self._volume_control.old_gain()
@@ -280,7 +309,7 @@ class SlimClient:
         )
         self.callback(EventType.PLAYER_UPDATED, self)
 
-    async def mute(self, muted: bool = False):
+    async def mute(self, muted: bool = False) -> None:
         """Send mute command to player."""
         muted_int = 0 if muted else 1
         await self._send_frame(b"aude", struct.pack("2B", muted_int, 0))
@@ -290,20 +319,27 @@ class SlimClient:
     async def play_url(
         self,
         url: str,
-        crossfade: int = 0,
-        mime_type: Optional[str] = None,
+        mime_type: str | None = None,
+        metadata: Metadata | None = None,
         send_flush: bool = True,
-    ):
+        transition: TransitionType = TransitionType.NONE,
+        transition_duration: int = 0,
+    ) -> None:
         """Request player to start playing a single url."""
-        if send_flush:
-            await self.send_strm(b"f", autostart=b"0")
         self.logger.debug("play url: %s", url)
         if not url.startswith("http"):
             raise UnsupportedContentType(f"Invalid URL: {url}")
-        self._current_url = url
-        self._powered = True
-        enable_crossfade = crossfade > 0
-        trans_type = b"1" if enable_crossfade else b"0"
+
+        if send_flush:
+            # flush buffers before playback
+            await self.send_strm(b"f", autostart=b"0")
+        self._next_url = url
+        self._next_metadata = metadata
+        # power on if we're not already powered
+        if not self._powered:
+            await self.power(True)
+        # set state to buffering when we send the play request
+        self._state = PlayerState.BUFFERING
 
         # extract host and port from uri
         parsed_uri = urlparse(url)
@@ -328,9 +364,9 @@ class SlimClient:
                 "HTTPS stream requested but player does not support HTTPS, "
                 "trying HTTP instead but playback may fail."
             )
-            return await self.play_url(
-                url.replace("https", "http"), crossfade, mime_type, send_flush
-            )
+            self.current_url = url.replace("https", "http")
+            scheme = "http"
+            port = 80
 
         if mime_type is None:
             # try to get the audio format from file extension
@@ -361,23 +397,27 @@ class SlimClient:
             command=b"s",
             formatbyte=FORMAT_BYTE.get(codec, b"?"),
             autostart=b"3",
-            trans_type=trans_type,
-            trans_duration=crossfade,
             server_port=port,
             server_ip=ipaddr_b,
             threshold=200,
             output_threshold=10,
+            trans_duration=transition_duration,
+            trans_type=transition.value,
             flags=0x20 if scheme == "https" else 0x00,
             httpreq=httpreq,
         )
 
-    async def _send_heartbeat(self):
-        """Send periodic heartbeat message to player."""
-        while True:
-            await self.send_strm(b"t", flags=0)
-            await asyncio.sleep(5)
+    def _send_heartbeat(self) -> None:
+        """Send (periodic) heartbeat message to player."""
 
-    async def _send_frame(self, command, data):
+        async def async_send_heartbeat():
+            heartbeat_id = self._last_heartbeat[0] + 1
+            self._last_heartbeat = (heartbeat_id, time.time())
+            await self.send_strm(b"t", flags=0, replay_gain=heartbeat_id)
+
+        asyncio.create_task(async_send_heartbeat())
+
+    async def _send_frame(self, command: bytes, data: bytes) -> None:
         """Send command to Squeeze player."""
         if self._reader.at_eof() or self._writer.is_closing():
             self.logger.debug("Socket is disconnected.")
@@ -390,7 +430,7 @@ class SlimClient:
         except ConnectionResetError:
             self.disconnect()
 
-    async def _socket_reader(self):
+    async def _socket_reader(self) -> None:
         """Handle incoming data from socket."""
         buffer = b""
         # keep reading bytes from the socket
@@ -438,7 +478,7 @@ class SlimClient:
         server_port=0,
         server_ip=b"0",
         httpreq=b"",
-    ):
+    ) -> None:
         """Create stream request message based on given arguments."""
         data = struct.pack(
             "!cccccccBcBcBBBLH",
@@ -461,7 +501,7 @@ class SlimClient:
         )
         await self._send_frame(b"strm", data + server_ip + httpreq)
 
-    async def _process_helo(self, data: bytes):
+    async def _process_helo(self, data: bytes) -> None:
         """Process incoming HELO event from player (player connected)."""
         self.logger.debug("HELO received: %s", data)
         # player connected, sends helo info message
@@ -485,7 +525,7 @@ class SlimClient:
         self._connected = True
         self.callback(EventType.PLAYER_CONNECTED, self)
 
-    def _process_stat(self, data):
+    def _process_stat(self, data: bytes) -> None:
         """Redirect incoming STAT event from player to correct method."""
         event = data[:4].decode()
         event_data = data[4:]
@@ -499,35 +539,39 @@ class SlimClient:
         else:
             asyncio.get_running_loop().call_soon(event_handler, data[4:])
 
-    def _process_stat_aude(self, data):
+    def _process_stat_aude(self, data: bytes) -> None:
         """Process incoming stat AUDe message (power level and mute)."""
-        (spdif_enable, dac_enable) = struct.unpack("2B", data[:4])
+        (spdif_enable, dac_enable) = struct.unpack("2B", data[:2])
         powered = spdif_enable or dac_enable
         self._powered = powered
         self._muted = not powered
         self.callback(EventType.PLAYER_UPDATED, self)
 
-    def _process_stat_audg(self, data):
+    def _process_stat_audg(self, data: bytes) -> None:
         """Process incoming stat AUDg message."""
         # srtm-s command received.
         # Some players may send this as aknowledge of volume change (audg command).
 
-    def _process_stat_stmc(self, data):
+    def _process_stat_stmc(self, data: bytes) -> None:
         """Process incoming stat STMc message (connected)."""
+        self.logger.debug("STMc received - connected.")
         # srtm-s command received. Guaranteed to be the first response to an strm-s.
+        self._state = PlayerState.BUFFERING
 
-    def _process_stat_stmd(self, data):
+    def _process_stat_stmd(self, data: bytes) -> None:
         """Process incoming stat STMd message (decoder ready)."""
         # pylint: disable=unused-argument
+        self.logger.debug("STMd received - decoder ready.")
         self.callback(EventType.PLAYER_DECODER_READY, self)
 
-    def _process_stat_stmf(self, data):
+    def _process_stat_stmf(self, data: bytes) -> None:
         """Process incoming stat STMf message (connection closed)."""
         # pylint: disable=unused-argument
-        self._state = PlayerState.IDLE
+        self.logger.debug("STMf received - connection closed.")
+        self._state = PlayerState.STOPPED
         self.callback(EventType.PLAYER_UPDATED, self)
 
-    def _process_stat_stmo(self, data):
+    def _process_stat_stmo(self, data: bytes) -> None:
         """
         Process incoming stat STMo message.
 
@@ -536,28 +580,32 @@ class SlimClient:
         # pylint: disable=unused-argument
         self.logger.debug("STMo received - output underrun.")
 
-    def _process_stat_stmp(self, data):
+    def _process_stat_stmp(self, data: bytes) -> None:
         """Process incoming stat STMp message: Pause confirmed."""
         # pylint: disable=unused-argument
         self.logger.debug("STMp received - pause confirmed.")
         self._state = PlayerState.PAUSED
         self.callback(EventType.PLAYER_UPDATED, self)
 
-    def _process_stat_stmr(self, data):
+    def _process_stat_stmr(self, data: bytes) -> None:
         """Process incoming stat STMr message: Resume confirmed."""
         # pylint: disable=unused-argument
         self.logger.debug("STMr received - resume confirmed.")
         self._state = PlayerState.PLAYING
         self.callback(EventType.PLAYER_UPDATED, self)
 
-    def _process_stat_stms(self, data):
+    def _process_stat_stms(self, data: bytes) -> None:
         # pylint: disable=unused-argument
         """Process incoming stat STMs message: Playback of new track has started."""
         self.logger.debug("STMs received - playback of new track has started")
         self._state = PlayerState.PLAYING
+        self.current_metadata = self._next_metadata
+        self.current_url = self._next_url
+        self._next_metadata = None
+        self._next_url = None
         self.callback(EventType.PLAYER_UPDATED, self)
 
-    def _process_stat_stmt(self, data):
+    def _process_stat_stmt(self, data: bytes) -> None:
         """Process incoming stat STMt message: heartbeat from client."""
         # pylint: disable=unused-variable
         (
@@ -571,47 +619,61 @@ class SlimClient:
             signal_strength,
             jiffies,
             output_buffer_size,
-            output_buffer_fullness,
+            output_buffer_readyness,
             elapsed_seconds,
             voltage,
             elapsed_milliseconds,
-            timestamp,
-            error_code,
-        ) = struct.unpack("!BBBLLLLHLLLLHLLH", data)
+            server_heartbeat,
+        ) = struct.unpack("!BBBLLLLHLLLLHLL", data[:47])
+
+        # handle heartbeat response (used to measure roundtrip/latency and ping/pong)
+        if server_heartbeat == self._last_heartbeat[0]:
+            # consider latency as half of the roundtrip
+            latency = (time.time() - self._last_heartbeat[1]) / 2
+            self._packet_latency.append(latency)
+            # schedule heartbeat
+            # if playback busy we want high accuracy
+            # but otherwise every 5 seconds is good enough
+            if self.state == PlayerState.PLAYING:
+                heartbeat_delay = 0.1
+            elif self.powered:
+                heartbeat_delay = 1
+            else:
+                heartbeat_delay = 5
+            asyncio.get_event_loop().call_later(heartbeat_delay, self._send_heartbeat)
 
         self._elapsed_milliseconds = elapsed_milliseconds
-        # formally we should use the timestamp field to calculate roundtrip time
-        # but I have not seen any need for that so far and just assume that each player
-        # more or less has the same latency
-        cur_timestamp = time.time()
-        self._last_timestamp = cur_timestamp
-        if abs(elapsed_seconds - self._last_report) >= 1:
-            self._last_report = elapsed_seconds
-            # send report with elapsed time only every second while playing
-            # note that the (very) accurate elapsed/current is always available in the property
-            self.callback(EventType.PLAYER_TIME_UPDATED, self)
+        # consider latency when calculating the elapsed time
+        self._last_timestamp = time.time() - self.packet_latency
+        self.callback(EventType.PLAYER_HEARTBEAT, self)
 
-    def _process_stat_stmu(self, data):
+    def _process_stat_stmu(self, data: bytes) -> None:
         """Process incoming stat STMu message: Buffer underrun: Normal end of playback."""
         # pylint: disable=unused-argument
         self.logger.debug("STMu received - end of playback.")
-        self._state = PlayerState.IDLE
+        self._state = PlayerState.STOPPED
+        # invalidate url/metadata
+        self.current_metadata = None
+        self.current_url = None
+        self._next_metadata = None
+        self._next_url = None
         self.callback(EventType.PLAYER_UPDATED, self)
 
-    def _process_stat_stml(self, data):
+    def _process_stat_stml(self, data: bytes) -> None:
         """Process incoming stat STMl message: Buffer threshold reached."""
         # pylint: disable=unused-argument
         self.logger.debug("STMl received - Buffer threshold reached.")
-        # autoplay 0 or 2: start playing by send unpause command when buffer full
-        asyncio.create_task(self.send_strm(b"u"))
+        # this is only used when autostart < 2 on strm-s commands
+        # send an event anyway for lib consumers to handle
+        self.callback(EventType.PLAYER_BUFFER_READY, self)
 
-    def _process_stat_stmn(self, data):
+    def _process_stat_stmn(self, data: bytes) -> None:
         """Process incoming stat STMn message: player couldn't decode stream."""
         # pylint: disable=unused-argument
         self.logger.debug("STMn received - player couldn't decode stream.")
-        self.callback(EventType.PLAYER_DECODER_ERROR)
+        self.callback(EventType.PLAYER_DECODER_ERROR, self)
 
-    async def _process_resp(self, data):
+    async def _process_resp(self, data: bytes) -> None:
         """Process incoming RESP message: Response received at player."""
         self.logger.debug("RESP received - Response received at player.")
         headers = parse_headers(data)
@@ -620,7 +682,10 @@ class SlimClient:
             # handle redirect
             location = headers["location"]
             self.logger.debug("Received redirect to %s", location)
-            await self.play_url(location)
+            if location.startswith("https") and not self._capabilities.get("CanHTTPS"):
+                self.logger.error("Server requires HTTPS.")
+            else:
+                await self.play_url(location)
             return
 
         if "content-type" in headers:
@@ -671,13 +736,14 @@ class SlimClient:
         # send continue (used when autoplay 1 or 3)
         await self._send_frame(b"cont", b"1")
 
-    def _process_setd(self, data):
+    def _process_setd(self, data: bytes) -> None:
         """Process incoming SETD message: Get/set player firmware settings."""
         data_id = data[0]
         if data_id == 0:
             # received player name
             self._device_name = data[1:-1].decode()
             self.callback(EventType.PLAYER_NAME_RECEIVED, self)
+            self.logger = logging.getLogger(__name__).getChild(self._device_name)
 
 
 class PySqueezeVolume:

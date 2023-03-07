@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 from .cli import SlimProtoCLI
 from .client import SlimClient
-from .const import EventType, SlimEvent
+from .const import SLIMPROTO_PORT, EventType, SlimEvent
 from .discovery import start_discovery
 
 EventCallBackType = Callable[[SlimEvent], None]
@@ -20,20 +20,17 @@ class SlimServer:
 
     def __init__(
         self,
-        port: int = 3483,
-        cli_port: Optional[int] = 0,
+        cli_port: Optional[int] = None,
         cli_port_json: Optional[int] = 0,
     ) -> None:
         """
         Initialize SlimServer instance.
 
-        control_port: The TCP port for the slimproto communication, default is 3483.
         cli_port: Optionally start a simple Telnet CLI server on this port for compatability
         with players relying on the server providing this feature. None to disable, 0 for autoselect.
         cli_port_json: Same as cli port but it's newer JSON RPC equivalent.
         """
         self.logger = logging.getLogger(__name__)
-        self.port = port
         self.cli = SlimProtoCLI(self, cli_port, cli_port_json)
         self._subscribers: List[EventSubscriptionType] = []
         self._socket_servers: List[Union[asyncio.Server, asyncio.BaseTransport]] = []
@@ -50,14 +47,17 @@ class SlimServer:
 
     async def start(self):
         """Start running the servers."""
-        self.logger.info("Starting SLIMProto server on port %s", self.port)
+        # slimproto port (3483) can not be different than the default
+        self.logger.info("Starting SLIMProto server on port %s", SLIMPROTO_PORT)
         self._socket_servers = [
             # start slimproto server
-            await asyncio.start_server(self._create_client, "0.0.0.0", self.port),
+            await asyncio.start_server(self._create_client, "0.0.0.0", SLIMPROTO_PORT),
             # setup cli
             *await self.cli.start(),
             # setup discovery
-            await start_discovery(self.port, self.cli.cli_port, self.cli.cli_port_json),
+            await start_discovery(
+                SLIMPROTO_PORT, self.cli.cli_port, self.cli.cli_port_json
+            ),
         ]
 
     async def stop(self):
