@@ -434,12 +434,6 @@ class SlimProtoCLI:
             self.logger.exception(exc)
             await self.send_status_response(writer, 501, str(exc))
 
-        finally:
-            # make sure the connection gets closed
-            if not writer.is_closing():
-                writer.close()
-                await writer.wait_closed()
-
     async def _handle_cometd_client(
         self,
         json_msg: list(dict[str, Any]),
