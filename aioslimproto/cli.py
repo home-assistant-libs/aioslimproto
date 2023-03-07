@@ -457,7 +457,6 @@ class SlimProtoCLI:
 
         # cometd message is an array of commands/messages
         for cometd_msg in json_msg:
-
             channel = cometd_msg.get("channel")
             # try to figure out clientid
             if not clientid and cometd_msg.get("clientId"):
