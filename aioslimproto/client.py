@@ -645,7 +645,7 @@ class SlimClient:
         self._elapsed_milliseconds = elapsed_milliseconds
         # consider latency when calculating the elapsed time
         self._last_timestamp = time.time() - self.packet_latency
-        self.callback(EventType.PLAYER_TIME_UPDATED, self)
+        self.callback(EventType.PLAYER_HEARTBEAT, self)
 
     def _process_stat_stmu(self, data: bytes) -> None:
         """Process incoming stat STMu message: Buffer underrun: Normal end of playback."""

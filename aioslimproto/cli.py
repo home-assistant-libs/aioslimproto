@@ -307,20 +307,20 @@ class SlimProtoCLI:
             "other_players_loop": [],
         }
 
-    async def handle_menu(self, player: SlimClient | None, args: list[str]):
+    async def handle_menu(
+        self, player: SlimClient | None, args: list[str]
+    ) -> dict[str, Any]:
         return {
             "item_loop": [],
             "offset": 0,
             "count": 0,
         }
-        return {
-            "item_loop": [],
-            "offset": 0,
-            "count": 2,
-        }
 
     async def handle_status(self, player: SlimClient | None, args: list[str]):
         """Handle request for Player status."""
+        # TODO: Extend this metadata with a bit more sane information,
+        # like current playing metadata etc.
+        # at least with this basic info returned the player boots up and plays music.
         return {
             "base": {"actions": {}},
             "time": player.elapsed_seconds,
@@ -342,8 +342,7 @@ class SlimProtoCLI:
             "duration": 0,
             "remote": 0,
             "playlist_modified": 0,
-            "item_loop": [
-            ],
+            "item_loop": [],
             "playlist shuffle": 0,
             "alarm_next": 0,
             "digital_volume_control": 1,
