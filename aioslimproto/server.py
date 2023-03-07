@@ -6,8 +6,6 @@ import logging
 from types import TracebackType
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
-from aioslimproto.util import select_free_port
-
 from .cli import SlimProtoCLI
 from .client import SlimClient
 from .const import SLIMPROTO_PORT, EventType, SlimEvent
@@ -57,7 +55,9 @@ class SlimServer:
             # setup cli
             *await self.cli.start(),
             # setup discovery
-            await start_discovery(SLIMPROTO_PORT, self.cli.cli_port, self.cli.cli_port_json),
+            await start_discovery(
+                SLIMPROTO_PORT, self.cli.cli_port, self.cli.cli_port_json
+            ),
         ]
 
     async def stop(self):

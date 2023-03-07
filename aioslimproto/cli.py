@@ -34,6 +34,7 @@ CHUNK_SIZE = 50
 
 class CometDResponse(TypedDict):
     """CometD Response Message."""
+
     channel: str
     id: str
     data: dict[str, Any]
@@ -41,6 +42,7 @@ class CometDResponse(TypedDict):
 
 class PlayerMessage(TypedDict):
     """Player Message as sent on the cli."""
+
     ip: str  # "1.1.1.1:38380"
     playerid: str  # 00:11:22:33:44:55
     playerindex: int
@@ -60,6 +62,7 @@ class PlayerMessage(TypedDict):
 
 class PlayersMessage(TypedDict):
     """Players Message as sent on the cli."""
+
     players_loop: list[PlayerMessage]
     count: int
 
@@ -313,6 +316,7 @@ class SlimProtoCLI:
     async def handle_menu(
         self, player: SlimClient | None, args: list[str]
     ) -> dict[str, Any]:
+        """Handle menu request from CLI."""
         return {
             "item_loop": [],
             "offset": 0,

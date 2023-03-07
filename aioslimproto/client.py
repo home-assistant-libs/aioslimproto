@@ -9,10 +9,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
-from collections import deque
 import struct
 import time
 from asyncio import StreamReader, StreamWriter, create_task
+from collections import deque
 from enum import Enum
 from typing import Callable, Dict, List, TypedDict
 from urllib.parse import parse_qsl, urlparse
