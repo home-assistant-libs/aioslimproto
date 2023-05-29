@@ -29,12 +29,12 @@ repos:
     hooks:
       - id: pydocstyle
         exclude: ^examples/|^.venv/|^.vscode/
-  # - repo: local
-  #   hooks:
-  #     - id: pylint
-  #       name: pylint
-  #       entry: pylint
-  #       language: system
-  #       types: [python]
-  #       args: ["-rn", "-sn", "--rcfile=pylintrc", "--fail-on=I"]
-  #       exclude: ^examples/|^.venv/|^.vscode/|^tests/
+  - repo: local
+    hooks:
+      - id: pylint
+        name: pylint
+        entry: pylint
+        language: system
+        types: [python]
+        args: ["-rn", "-sn", "--rcfile=pylintrc", "--fail-on=I"]
+        exclude: ^examples/|^.venv/|^.vscode/|^tests/
