@@ -17,6 +17,8 @@ from enum import Enum
 from typing import Callable, Dict, List, TypedDict
 from urllib.parse import parse_qsl, urlparse
 
+from async_timeout import timeout
+
 from .const import EventType
 from .errors import UnsupportedContentType
 from .util import parse_capabilities, parse_headers
@@ -436,9 +438,9 @@ class SlimClient:
         # keep reading bytes from the socket
         while not (self._reader.at_eof() or self._writer.is_closing()):
             try:
-                async with asyncio.timeout(HEARTBEAT_INTERVAL * 2):
+                async with timeout(HEARTBEAT_INTERVAL * 2):
                     data = await self._reader.read(64)
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 break
             # handle incoming data from socket
             buffer = buffer + data
