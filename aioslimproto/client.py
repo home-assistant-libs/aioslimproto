@@ -17,6 +17,8 @@ from enum import Enum
 from typing import Callable, Dict, List, TypedDict
 from urllib.parse import parse_qsl, urlparse
 
+from async_timeout import timeout
+
 from .const import EventType
 from .errors import UnsupportedContentType
 from .util import parse_capabilities, parse_headers
@@ -125,6 +127,7 @@ FALLBACK_MODEL = "Squeezebox"
 FALLLBACK_FIRMWARE = "Unknown"
 FALLBACK_CODECS = ["pcm"]
 FALLBACK_SAMPLE_RATE = 96000
+HEARTBEAT_INTERVAL = 5
 
 
 class Metadata(TypedDict):
@@ -172,8 +175,8 @@ class SlimClient:
         self._send_heartbeat()
 
     def disconnect(self) -> None:
-        """Disconnect socket client."""
-        if self._reader_task and not self._reader_task.cancelled():
+        """Disconnect and/or cleanup socket client."""
+        if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
 
         if self._connected:
@@ -181,7 +184,6 @@ class SlimClient:
             if self._writer.can_write_eof():
                 self._writer.write_eof()
             self._writer.close()
-            self.callback(EventType.PLAYER_DISCONNECTED, self)
 
     @property
     def connected(self) -> bool:
@@ -313,7 +315,7 @@ class SlimClient:
         """Send mute command to player."""
         muted_int = 0 if muted else 1
         await self._send_frame(b"aude", struct.pack("2B", muted_int, 0))
-        self.muted = muted
+        self._muted = muted
         self.callback(EventType.PLAYER_UPDATED, self)
 
     async def play_url(
@@ -408,7 +410,7 @@ class SlimClient:
         )
 
     def _send_heartbeat(self) -> None:
-        """Send (periodic) heartbeat message to player."""
+        """Send heartbeat message to player."""
 
         async def async_send_heartbeat():
             heartbeat_id = self._last_heartbeat[0] + 1
@@ -435,7 +437,11 @@ class SlimClient:
         buffer = b""
         # keep reading bytes from the socket
         while not (self._reader.at_eof() or self._writer.is_closing()):
-            data = await self._reader.read(64)
+            try:
+                async with timeout(HEARTBEAT_INTERVAL * 2):
+                    data = await self._reader.read(64)
+            except asyncio.TimeoutError:
+                break
             # handle incoming data from socket
             buffer = buffer + data
             del data
@@ -457,6 +463,7 @@ class SlimClient:
         self.logger.debug(
             "Socket disconnected: %s", self._writer.get_extra_info("peername")
         )
+        self.callback(EventType.PLAYER_DISCONNECTED, self)
         self.disconnect()
 
     async def send_strm(
@@ -639,7 +646,7 @@ class SlimClient:
             elif self.powered:
                 heartbeat_delay = 1
             else:
-                heartbeat_delay = 5
+                heartbeat_delay = HEARTBEAT_INTERVAL
             asyncio.get_event_loop().call_later(heartbeat_delay, self._send_heartbeat)
 
         self._elapsed_milliseconds = elapsed_milliseconds
