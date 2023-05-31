@@ -33,8 +33,8 @@ repos:
     hooks:
       - id: pylint
         name: pylint
-        entry: pylint
-        language: system
+        entry: script/run-in-env.sh pylint -j 0
+        language: script
         types: [python]
         args: ["-rn", "-sn", "--rcfile=pylintrc", "--fail-on=I"]
-        exclude: ^examples/|^.venv/|^.vscode/|^tests/
+        exclude: ^.venv/|^.vscode/|^tests/|example.py

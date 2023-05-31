@@ -1,9 +1,8 @@
 """aioslimproto example.."""
 import asyncio
+import logging
 from os.path import abspath, dirname
 from sys import path
-import logging
-
 
 path.insert(1, dirname(dirname(abspath(__file__))))
 
