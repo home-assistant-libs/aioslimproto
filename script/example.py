@@ -1,15 +1,15 @@
 """aioslimproto example.."""
 import asyncio
+import logging
 from os.path import abspath, dirname
 from sys import path
-import logging
-
-
-path.insert(1, dirname(dirname(abspath(__file__))))
 
 # pylint: disable=wrong-import-position
 from aioslimproto import SlimServer  # noqa: E402
 from aioslimproto.const import EventType, SlimEvent  # noqa: E402
+
+path.insert(1, dirname(dirname(abspath(__file__))))
+
 
 logging.basicConfig(
     level=logging.DEBUG,

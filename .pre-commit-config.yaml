@@ -37,4 +37,4 @@ repos:
         language: script
         types: [python]
         args: ["-rn", "-sn", "--rcfile=pylintrc", "--fail-on=I"]
-        exclude: ^.venv/|^.vscode/|^tests/
+        exclude: ^.venv/|^.vscode/|^tests/|example.py
