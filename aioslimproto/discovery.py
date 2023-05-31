@@ -60,7 +60,6 @@ class ClientDiscoveryDatagram(Datagram):
     def __init__(self, data):
         """Initialize class."""
         msg = struct.unpack("!cxBB8x6B", data.encode())
-        assert msg[0] == "d"
         self.device = msg[1]
         self.firmware = hex(msg[2])
         self.client = ":".join(["%02x" % (x,) for x in msg[3:]])
@@ -92,7 +91,6 @@ class TLVDiscoveryRequestDatagram(Datagram):
     def __init__(self, data):
         """Initialize class."""
         requestdata = OrderedDict()
-        assert data[0] == "e"
         idx = 1
         length = len(data) - 5
         while idx <= length:
