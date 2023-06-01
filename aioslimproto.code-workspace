@@ -11,7 +11,7 @@
 				"name": "AIOSlimProto",
 				"type": "python",
 				"request": "launch",
-				"program": "./examples/example.py",
+				"program": "./script/example.py",
 				"justMyCode": false
 			  },
 		],
