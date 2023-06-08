@@ -31,3 +31,4 @@ class SlimEvent:
 
 
 SLIMPROTO_PORT = 3483
+FALLBACK_CODECS = ["pcm", "mp3"]

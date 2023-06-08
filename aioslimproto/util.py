@@ -7,6 +7,8 @@ import socket
 from typing import Any, Dict
 from urllib.parse import parse_qsl
 
+from .const import FALLBACK_CODECS
+
 
 def get_ip():
     """Get primary IP-address for this host."""
@@ -70,7 +72,7 @@ def parse_capabilities(helo_data: bytes) -> Dict[str, Any]:
             codec
             for codec in ("alc", "aac", "ogg", "ogf", "flc", "aif", "pcm", "mp3")
             if codec in info
-        ]
+        ] or FALLBACK_CODECS
     except Exception as exc:  # pylint: disable=broad-except
         # I have no idea if this message is the same for all device types
         # so a big try..except around it
