@@ -13,7 +13,7 @@ import struct
 import time
 from asyncio import StreamReader, StreamWriter, create_task
 from collections import deque
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Callable, Dict, List, TypedDict
 from urllib.parse import parse_qsl, urlparse
 
@@ -57,6 +57,64 @@ class TransitionType(Enum):
     FADE_IN = b"2"
     FADE_OUT = b"3"
     FADE_IN_OUT = b"4"
+
+
+class RemoteCode(IntEnum):
+    """Enum with all (known) remote ir codes."""
+
+    SLEEP = 1988737095
+    POWER = 1988706495
+    REWIND = 1988739135
+    PAUSE = 1988698335
+    FORWARD = 1988730975
+    ADD = 1988714655
+    PLAY = 1988694255
+    UP = 1988747295
+    DOWN = 1988735055
+    LEFT = 1988726895
+    RIGHT = 1988743215
+    VOLUME_UP = 1988722815
+    VOLUME_DOWN = 1988690175
+    NUM_1 = 1988751375
+    NUM_2 = 1988692215
+    NUM_3 = 1988724855
+    NUM_4 = 1988708535
+    NUM_5 = 1988741175
+    NUM_6 = 1988700375
+    NUM_7 = 1988733015
+    NUM_8 = 1988716695
+    NUM_9 = 1988749335
+    NUM_0 = 1988728935
+    FAVORITES = 1988696295
+    SEARCH = 1988712615
+    BROWSE = 1988718735
+    SHUFFLE = 1988745255
+    REPEAT = 1988704455
+    NOW_PLAYING = 1988720775
+    SIZE = 1988753415
+    BRIGHTNESS = 1988691195
+
+
+class ButtonCode(IntEnum):
+    """Enum with all (known) button codes."""
+
+    POWER = 65546
+    PRESET_1 = 131104
+    PRESET_2 = 131105
+    PRESET_3 = 131106
+    PRESET_4 = 131107
+    PRESET_5 = 131108
+    PRESET_6 = 131109
+    BACK = 131085
+    PLAY = 131090
+    ADD = 131091
+    UP = 131083
+    OK = 131086
+    REWIND = 131088
+    PAUSE = 131095
+    FORWARD = 131101
+    VOLUME_DOWN = 131081
+    VOLUME_UP = 131082
 
 
 PCM_SAMPLE_SIZE = {
@@ -291,6 +349,13 @@ class SlimClient:
         """Send pause command to player."""
         await self.send_strm(b"p")
 
+    async def toggle_pause(self) -> None:
+        """Toggle play/pause command."""
+        if self.state == PlayerState.PLAYING:
+            await self.pause()
+        else:
+            await self.play()
+
     async def power(self, powered: bool = True) -> None:
         """Send power command to player."""
         # mute is the same as power
@@ -301,9 +366,35 @@ class SlimClient:
         self._powered = powered
         self.callback(EventType.PLAYER_UPDATED, self)
 
+    async def toggle_power(self) -> None:
+        """Toggle power command."""
+        await self.power(not self.powered)
+
     async def volume_set(self, volume_level: int) -> None:
         """Send new volume level command to player."""
         self._volume_control.volume = volume_level
+        old_gain = self._volume_control.old_gain()
+        new_gain = self._volume_control.new_gain()
+        await self._send_frame(
+            b"audg",
+            struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
+        )
+        self.callback(EventType.PLAYER_UPDATED, self)
+
+    async def volume_up(self) -> None:
+        """Send volume up command to player."""
+        self._volume_control.increment()
+        old_gain = self._volume_control.old_gain()
+        new_gain = self._volume_control.new_gain()
+        await self._send_frame(
+            b"audg",
+            struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
+        )
+        self.callback(EventType.PLAYER_UPDATED, self)
+
+    async def volume_down(self) -> None:
+        """Send volume down command to player."""
+        self._volume_control.decrement()
         old_gain = self._volume_control.old_gain()
         new_gain = self._volume_control.new_gain()
         await self._send_frame(
@@ -532,6 +623,85 @@ class SlimClient:
         await self.volume_set(self.volume_level)
         self._connected = True
         self.callback(EventType.PLAYER_CONNECTED, self)
+
+    def _process_butn(self, data: bytes) -> None:
+        """Handle 'butn' command from client."""
+        timestamp, button = struct.unpack("!LL", data)
+        # handle common buttons
+        if button == ButtonCode.POWER:
+            asyncio.create_task(self.toggle_power())
+            return
+        if button == ButtonCode.PAUSE:
+            asyncio.create_task(self.toggle_pause())
+            return
+        if button == ButtonCode.PLAY:
+            asyncio.create_task(self.play())
+            return
+        if button == ButtonCode.VOLUME_DOWN:
+            asyncio.create_task(self.volume_down())
+            return
+        if button == ButtonCode.VOLUME_UP:
+            asyncio.create_task(self.volume_up())
+            return
+        # forward all other
+        self.callback(
+            EventType.PLAYER_BTN_EVENT,
+            self,
+            {
+                "type": "butn",
+                "timestamp": timestamp,
+                "button": button,
+            },
+        )
+
+    def _process_knob(self, data: bytes) -> None:
+        """Handle 'knob' command from client."""
+        timestamp, position, sync = struct.unpack("!LLB", data)
+        self.callback(
+            EventType.PLAYER_BTN_EVENT,
+            self,
+            {
+                "type": "knob",
+                "timestamp": timestamp,
+                "position": position,
+                "sync": sync,
+            },
+        )
+
+    def _process_ir(self, data: bytes) -> None:
+        """Handle 'ir' command from client."""
+        # format for IR:
+        # [4]   time since startup in ticks (1KHz)
+        # [1]	code format
+        # [1]	number of bits
+        # [4]   the IR code, up to 32 bits
+        timestamp, code = struct.unpack("!LxxL", data)
+        # handle common buttons
+        if code == RemoteCode.POWER:
+            asyncio.create_task(self.toggle_power())
+            return
+        if code == RemoteCode.PAUSE:
+            asyncio.create_task(self.toggle_pause())
+            return
+        if code == RemoteCode.PLAY:
+            asyncio.create_task(self.play())
+            return
+        if code == RemoteCode.VOLUME_DOWN:
+            asyncio.create_task(self.volume_down())
+            return
+        if code == RemoteCode.VOLUME_UP:
+            asyncio.create_task(self.volume_up())
+            return
+        # forward all other
+        self.callback(
+            EventType.PLAYER_BTN_EVENT,
+            self,
+            {
+                "type": "ir",
+                "timestamp": timestamp,
+                "code": code,
+            },
+        )
 
     def _process_stat(self, data: bytes) -> None:
         """Redirect incoming STAT event from player to correct method."""
