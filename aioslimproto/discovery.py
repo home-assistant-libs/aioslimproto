@@ -122,7 +122,7 @@ class DiscoveryProtocol:
     def build_tlv_response(self, requestdata: OrderedDict[str, str]) -> OrderedDict[str, str]:
         """Build TLV Response message."""
         responsedata = OrderedDict()
-        for key, value in requestdata.items():
+        for key in requestdata:
             if key == "NAME":
                 responsedata[key] = self.name
             elif key == "IPAD":
