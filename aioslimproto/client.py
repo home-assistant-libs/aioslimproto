@@ -781,11 +781,7 @@ class SlimClient:
 
     def _process_stat_aude(self, data: bytes) -> None:
         """Process incoming stat AUDe message (power level and mute)."""
-        (spdif_enable, dac_enable) = struct.unpack("2B", data[:2])
-        powered = spdif_enable or dac_enable
-        self._powered = powered
-        self._muted = not powered
-        self.callback(EventType.PLAYER_UPDATED, self)
+        # ignore this event (and use optimistic state instead), is is flaky across players
 
     def _process_stat_audg(self, data: bytes) -> None:
         """Process incoming stat AUDg message."""
