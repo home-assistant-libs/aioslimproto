@@ -10,6 +10,7 @@ from .cli import SlimProtoCLI
 from .client import SlimClient
 from .const import SLIMPROTO_PORT, EventType, SlimEvent
 from .discovery import start_discovery
+from .util import get_ip, get_hostname
 
 EventCallBackType = Callable[[SlimEvent], None]
 EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
@@ -22,15 +23,22 @@ class SlimServer:
         self,
         cli_port: Optional[int] = None,
         cli_port_json: Optional[int] = 0,
+        ip_address: str | None = None,
+        name: str | None = None
     ) -> None:
         """
         Initialize SlimServer instance.
 
-        cli_port: Optionally start a simple Telnet CLI server on this port for compatability
+        Params:
+        - cli_port: Optionally start a simple Telnet CLI server on this port for compatability
         with players relying on the server providing this feature. None to disable, 0 for autoselect.
-        cli_port_json: Same as cli port but it's newer JSON RPC equivalent.
+        - cli_port_json: Same as cli port but it's newer JSON RPC equivalent.
+        - ip_address: IP to broadcast to clients to discover this server, None for autoselect.
+        - name: Name to broadcast to clients to discover this server, None for autoselect.
         """
         self.logger = logging.getLogger(__name__)
+        self.ip_address = ip_address or get_ip()
+        self.name = name or get_hostname()
         self.cli = SlimProtoCLI(self, cli_port, cli_port_json)
         self._subscribers: List[EventSubscriptionType] = []
         self._socket_servers: List[Union[asyncio.Server, asyncio.BaseTransport]] = []
@@ -56,7 +64,11 @@ class SlimServer:
             *await self.cli.start(),
             # setup discovery
             await start_discovery(
-                SLIMPROTO_PORT, self.cli.cli_port, self.cli.cli_port_json
+                self.ip_address,
+                SLIMPROTO_PORT,
+                self.cli.cli_port,
+                self.cli.cli_port_json,
+                self.name
             ),
         ]
 

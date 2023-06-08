@@ -1,4 +1,4 @@
-"""Logic for discovering slimproto clients on the local network."""
+"""Logic for slimproto clients to discover our (emulated) server on the local network."""
 from __future__ import annotations
 
 import asyncio
@@ -6,9 +6,6 @@ import logging
 import socket
 import struct
 from collections import OrderedDict
-from typing import Optional
-
-from .util import get_hostname, get_ip
 
 LOGGER = logging.getLogger(__name__)
 
@@ -16,41 +13,23 @@ LOGGER = logging.getLogger(__name__)
 
 
 async def start_discovery(
-    control_port: int, cli_port: Optional[int], cli_port_json: Optional[int]
+    ip_address: str,
+    control_port: int,
+    cli_port: int | None,
+    cli_port_json: int | None,
+    name: str = "Slimproto",
+    uuid: str = "slimproto",
 ) -> asyncio.BaseTransport:
     """Start discovery for players."""
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
-        lambda: DiscoveryProtocol(control_port, cli_port, cli_port_json),
+        lambda: DiscoveryProtocol(ip_address, control_port, cli_port, cli_port_json, name, uuid),
         local_addr=("0.0.0.0", control_port),
     )
     return transport
 
 
-class Datagram:
-    """Description of a discovery datagram."""
-
-    @classmethod
-    def decode(cls, data):
-        """Decode a datagram message."""
-        data = data.decode(errors="replace")
-        if data[0] == "e":
-            return TLVDiscoveryRequestDatagram(data)
-        if data[0] == "E":
-            return TLVDiscoveryResponseDatagram(data)
-        if data[0] == "d":
-            return ClientDiscoveryDatagram(data)
-        if data[0] == "h":
-            pass  # Hello!
-        if data[0] == "i":
-            pass  # IR
-        if data[0] == "2":
-            pass  # i2c?
-        if data[0] == "a":
-            pass  # ack!
-
-
-class ClientDiscoveryDatagram(Datagram):
+class ClientDiscoveryDatagram:
     """Description of a client discovery datagram."""
 
     device = None
@@ -59,14 +38,14 @@ class ClientDiscoveryDatagram(Datagram):
 
     def __init__(self, data):
         """Initialize class."""
-        msg = struct.unpack("!cxBB8x6B", data.encode())
+        msg = struct.unpack("!cxBB8x6B", data)
         self.device = msg[1]
         self.firmware = hex(msg[2])
-        self.client = ":".join(["%02x" % (x,) for x in msg[3:]])
+        self.client = ":".join([f"{x:02x}" for x in msg[3:]])
 
     def __repr__(self):
         """Print the class contents."""
-        return "<%s device=%r firmware=%r client=%r>" % (
+        return "<{} device={!r} firmware={!r} client={!r}>".format(
             self.__class__.__name__,
             self.device,
             self.firmware,
@@ -74,56 +53,29 @@ class ClientDiscoveryDatagram(Datagram):
         )
 
 
-class DiscoveryResponseDatagram(Datagram):
-    """Description of a discovery response datagram."""
-
-    def __init__(self, hostname, port):
-        """Initialize class."""
-        # pylint: disable=unused-argument
-        hostname = hostname[:16].encode("UTF-8")
-        hostname += (16 - len(hostname)) * "\x00"
-        self.packet = struct.pack("!c16s", "D", hostname).decode()
-
-
-class TLVDiscoveryRequestDatagram(Datagram):
+class TLVDiscoveryRequestDatagram:
     """Description of a discovery request datagram."""
 
-    def __init__(self, data):
+    def __init__(self, data: str):
         """Initialize class."""
         requestdata = OrderedDict()
-        idx = 1
+        idx = 0
         length = len(data) - 5
         while idx <= length:
-            typ, _len = struct.unpack_from("4sB", data.encode(), idx)
+            key, _len = struct.unpack_from("4sB", data.encode(), idx)
             if _len:
                 val = data[idx + 5 : idx + 5 + _len]
                 idx += 5 + _len
             else:
                 val = None
                 idx += 5
-            typ = typ.decode()
-            requestdata[typ] = val
+            key = key.decode()
+            requestdata[key] = val
         self.data = requestdata
 
     def __repr__(self):
         """Pretty print class."""
-        return "<%s data=%r>" % (self.__class__.__name__, self.data.items())
-
-
-class TLVDiscoveryResponseDatagram(Datagram):
-    """Description of a TLV discovery response datagram."""
-
-    def __init__(self, responsedata):
-        """Initialize class."""
-        parts = ["E"]  # new discovery format
-        for typ, value in responsedata.items():
-            if value is None:
-                value = ""
-            elif len(value) > 255:
-                # Response too long, truncating to 255 bytes
-                value = value[:255]
-            parts.extend((typ, chr(len(value)), value))
-        self.packet = "".join(parts)
+        return f"<{self.__class__.__name__} data={self.data.items()!r}>"
 
 
 class DiscoveryProtocol:
@@ -131,14 +83,20 @@ class DiscoveryProtocol:
 
     def __init__(
         self,
+        ip_address: str,
         control_port: int,
-        cli_port: Optional[int],
-        cli_port_json: Optional[int],
+        cli_port: int | None,
+        cli_port_json: int | None,
+        name: str,
+        uuid: str,
     ):
         """Initialze class."""
+        self.ip_address = ip_address
         self.control_port = control_port
         self.cli_port = cli_port
         self.cli_port_json = cli_port_json
+        self.name = name
+        self.uuid = uuid
         self.transport = None
 
     def connection_made(self, transport):
@@ -161,51 +119,52 @@ class DiscoveryProtocol:
         # pylint: disable=unused-argument
         LOGGER.debug("Connection lost to discovery")
 
-    def build_tlv_response(self, requestdata):
+    def build_tlv_response(self, requestdata: OrderedDict[str, str]) -> OrderedDict[str, str]:
         """Build TLV Response message."""
         responsedata = OrderedDict()
-        for typ, value in requestdata.items():
-            if typ == "NAME":
-                # send full host name - no truncation
-                value = get_hostname()
-            elif typ == "IPAD":
-                value = get_ip()
-                # :todo: IPv6
-                if value == "0.0.0.0":
-                    # do not send back an ip address
-                    typ = None
-            elif typ == "JSON" and self.cli_port_json is not None:
+        for key, value in requestdata.items():
+            if key == "NAME":
+                responsedata[key] = self.name
+            elif key == "IPAD":
+                responsedata[key] = self.ip_address
+            elif key == "JSON" and self.cli_port_json is not None:
                 # send port as a string
-                value = str(self.cli_port_json)
-            elif typ == "CLIP" and self.cli_port is not None:
+                responsedata[key] = str(self.cli_port_json)
+            elif key == "CLIP" and self.cli_port is not None:
                 # send port as a string
-                value = str(self.cli_port)
-            elif typ == "VERS":
+                responsedata[key] = str(self.cli_port)
+            elif key == "VERS":
                 # send server version
-                value = "7.9"
-            elif typ == "UUID":
+                responsedata[key] = "7.999.999"
+            elif key == "UUID":
                 # send server uuid
-                value = "aioslimproto"
-            elif typ == "JVID":
-                # send server JVID
-                value = "aioslimproto"
-            else:
-                LOGGER.debug("Unexpected information request: %r", typ)
-                typ = None
-            if typ:
-                responsedata[typ] = value
+                responsedata[key] = self.uuid
         return responsedata
 
-    def datagram_received(self, data, addr):
-        """Datagram received callback."""
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        """Handle Datagram received callback."""
         # pylint: disable=broad-except
         try:
-            dgram = Datagram.decode(data)
-            if isinstance(dgram, ClientDiscoveryDatagram):
+            # tlv discovery request
+            if data.startswith(b"e"):
+                # Discovery request and responses contain TLVs of the format:
+                # T (4 bytes), L (1 byte unsigned), V (0-255 bytes)
+                # To escape from previous discovery format,
+                # request are prepended by 'e', responses by 'E'
+                # strip leading char of the datagram message
+                decoded_data = data.decode("utf-8")[1:]
+                dgram = TLVDiscoveryRequestDatagram(decoded_data)
+                requestdata = self.build_tlv_response(dgram.data)
+                self.send_tlv_discovery_response(requestdata, addr)
+            # udp/legacy discovery request
+            if data.startswith(b"d"):
+                # Discovery request: note that SliMP3 sends deviceid and revision in the discovery
+                # request, but the revision is wrong (v 2.2 sends revision 1.1). Oops.
+                # also, it does not send the MAC address until the [h]ello packet.
+                # Squeezebox sends all fields correctly.
+                dgram = ClientDiscoveryDatagram(data)
                 self.send_discovery_response(addr)
-            elif isinstance(dgram, TLVDiscoveryRequestDatagram):
-                resonsedata = self.build_tlv_response(dgram.data)
-                self.send_tlv_discovery_response(resonsedata, addr)
+            # NOTE: ignore all other such as slimp3 - that is simply too old
         except Exception:
             LOGGER.exception(
                 "Error occured while trying to parse a datagram from %s - data: %s",
@@ -213,12 +172,25 @@ class DiscoveryProtocol:
                 data,
             )
 
-    def send_discovery_response(self, addr):
+    def send_discovery_response(self, addr: tuple[str, int]) -> None:
         """Send discovery response message."""
-        dgram = DiscoveryResponseDatagram(get_hostname(), self.control_port)
-        self.transport.sendto(dgram.packet.encode(), addr)
+        # prefer ip over hostname because its truncated to 16 chars
+        hostname = self.ip_address[:16].encode("iso-8859-1")
+        hostname += (16 - len(hostname)) * b"\x00"
+        dgram = struct.pack("!c16s", b"D", hostname).decode()
+        self.transport.sendto(dgram.encode(), addr)
 
-    def send_tlv_discovery_response(self, resonsedata, addr):
+    def send_tlv_discovery_response(
+        self, requestdata: OrderedDict[str, str], addr: tuple[str, int]
+    ) -> None:
         """Send TLV discovery response message."""
-        dgram = TLVDiscoveryResponseDatagram(resonsedata)
-        self.transport.sendto(dgram.packet.encode(), addr)
+        parts = ["E"]  # new discovery format
+        for key, value in requestdata.items():
+            if value is None:
+                value = ""  # noqa: PLW2901
+            elif len(value) > 255:
+                # Response too long, truncating to 255 bytes
+                value = value[:255]  # noqa: PLW2901
+            parts.extend((key, chr(len(value)), value))
+        dgram = "".join(parts)
+        self.transport.sendto(dgram.encode(), addr)
