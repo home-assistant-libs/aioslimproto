@@ -7,7 +7,7 @@ https://github.com/winjer/squeal/blob/master/src/squeal/player/display.py
 from __future__ import annotations
 
 import struct
-from typing import Type
+from typing import Union
 
 # pylint: disable=missing-class-docstring,invalid-name
 
@@ -161,4 +161,4 @@ class VUMeter:
         self.right = right
 
 
-VisualisationType = Type[NoVisualisation] | Type[SpectrumAnalyser] | Type[VUMeter]
+VisualisationType = Union[NoVisualisation, SpectrumAnalyser, VUMeter]
