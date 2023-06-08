@@ -50,6 +50,7 @@ class PlayerState(Enum):
     STOPPED = "stopped"
     PAUSED = "paused"
     BUFFERING = "buffering"
+    BUFFER_READY = "buffer_ready"
 
 
 class TransitionType(Enum):
@@ -435,6 +436,7 @@ class SlimClient:
         send_flush: bool = True,
         transition: TransitionType = TransitionType.NONE,
         transition_duration: int = 0,
+        autostart: bool = True,
     ) -> None:
         """Request player to start playing a single url."""
         self.logger.debug("play url: %s", url)
@@ -502,7 +504,7 @@ class SlimClient:
         await self.send_strm(
             command=b"s",
             codec_details=codec_details,
-            autostart=b"1",
+            autostart=b"1" if autostart else b"0",
             server_port=port,
             server_ip=int(ipaddress.ip_address(ipaddr)),
             threshold=200,
@@ -571,7 +573,7 @@ class SlimClient:
         while self.connected:
             self._last_heartbeat = heartbeat_id = self._last_heartbeat + 1
             await self.send_strm(
-                b"t", autostart=b"1", flags=0, replay_gain=heartbeat_id
+                b"t", autostart=b"0", flags=0, replay_gain=heartbeat_id
             )
             await asyncio.sleep(5)
 
@@ -884,7 +886,8 @@ class SlimClient:
         # pylint: disable=unused-argument
         self.logger.debug("STMl received - Buffer threshold reached.")
         # this is only used when autostart < 2 on strm-s commands
-        # send an event anyway for lib consumers to handle
+        # send an event for lib consumers to handle
+        self._state = PlayerState.BUFFER_READY
         self.callback(EventType.PLAYER_BUFFER_READY, self)
 
     def _process_stat_stmn(self, data: bytes) -> None:
@@ -919,7 +922,7 @@ class SlimClient:
             await self._send_frame(b"codc", codc_msg)
 
         # send continue (used when autoplay 1 or 3)
-        await self._send_frame(b"cont", b"1")
+        # await self._send_frame(b"cont", b"1")
 
     def _process_setd(self, data: bytes) -> None:
         """Process incoming SETD message: Get/set player firmware settings."""
