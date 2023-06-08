@@ -35,7 +35,7 @@ class Font:
 
 
 class SlimProtoDisplay:
-    """Respresentation of a Slimproto display."""
+    """Reresentation of a Slimproto display."""
 
     class Transition:
         """Model for a Transition."""
