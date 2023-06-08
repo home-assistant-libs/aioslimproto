@@ -6,7 +6,7 @@ https://github.com/winjer/squeal/blob/master/src/squeal/player/volume.py
 """
 
 
-class PySqueezeVolume:
+class SlimProtoVolume:
     """Represents a sound volume. This is an awful lot more complex than it sounds."""
 
     minimum = 0

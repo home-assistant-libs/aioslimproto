@@ -19,10 +19,12 @@ from urllib.parse import parse_qsl, urlparse
 
 from async_timeout import timeout
 
+from aioslimproto.display import SlimProtoDisplay
+
 from .const import EventType
 from .errors import UnsupportedContentType
 from .util import parse_capabilities, parse_headers
-from .volume import PySqueezeVolume
+from .volume import SlimProtoVolume
 
 # from http://wiki.slimdevices.com/index.php/SlimProtoTCPProtocol#HELO
 DEVICE_TYPE = {
@@ -219,7 +221,8 @@ class SlimClient:
         self._device_type: str = ""
         self._capabilities: Dict[str, str] = {}
         self._device_name: str = ""
-        self._volume_control = PySqueezeVolume()
+        self._volume_control = SlimProtoVolume()
+        self._display_control = SlimProtoDisplay()
         self._powered: bool = False
         self._muted: bool = False
         self._state = PlayerState.STOPPED
@@ -339,11 +342,11 @@ class SlimClient:
 
     async def stop(self) -> None:
         """Send stop command to player."""
-        await self.send_strm(b"q")
+        await self.send_strm(b"q", flags=0)
 
     async def play(self) -> None:
         """Send play/unpause command to player."""
-        await self.send_strm(b"u")
+        await self.send_strm(b"u", flags=0)
 
     async def pause(self) -> None:
         """Send pause command to player."""
@@ -501,6 +504,38 @@ class SlimClient:
             httpreq=httpreq,
         )
 
+    async def set_brightness(self, level=4):
+        """Set brightness command on (supported) display."""
+        assert 0 <= level <= 4
+        await self._send_frame(b"grfb", struct.pack("!H", level))
+
+    # async def set_visualisation(self, visualisation):
+    #     await self._send_frame(b"visu", visualisation.pack())
+
+    async def render(
+        self,
+        text: str,
+        size: int = 16,
+        position: tuple[int, int] = (0, 0),
+        font: str = "DejaVu-Sans",
+    ) -> None:
+        """Render given text on display of (supported) slimproto client."""
+
+        def _render():
+            self._display_control.clear()
+            self._display_control.renderText(text, font, size, position)
+            return self._display_control.frame()
+
+        bitmap = await asyncio.get_running_loop().run_in_executor(None, _render)
+        await self._update_display(bitmap)
+
+    async def _update_display(
+        self, bitmap: bytes, transition: str = "c", offset: int = 0, param: int = 0
+    ) -> None:
+        """Update display of (supported) slimproto client."""
+        frame = struct.pack("!Hcb", offset, transition.encode(), param) + bitmap
+        await self._send_frame(b"grfe", frame)
+
     def _send_heartbeat(self) -> None:
         """Send heartbeat message to player."""
 
@@ -612,7 +647,9 @@ class SlimClient:
         self._capabilities = parse_capabilities(data)
         self.logger.debug("Player connected: %s", self.player_id)
         # Set some startup settings for the player
-        await self._send_frame(b"vers", b"7.8")
+        await self._send_frame(b"vers", b"7.999.999")
+        await self.stop()
+        await self.set_brightness()
         await self._send_frame(b"setd", struct.pack("B", 0))
         await self._send_frame(b"setd", struct.pack("B", 4))
         await self.stop()
@@ -622,6 +659,7 @@ class SlimClient:
         await self.power(self._powered)
         await self.volume_set(self.volume_level)
         self._connected = True
+        await self.render(f"{self.name} - SlimProto")
         self.callback(EventType.PLAYER_CONNECTED, self)
 
     def _process_butn(self, data: bytes) -> None:
