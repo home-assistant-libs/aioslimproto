@@ -11,7 +11,7 @@ PROJECT_REQ_PYTHON_VERSION = "3.9"
 
 setup(
     name="aioslimproto",
-    version="2.2.2",
+    version="2.3.0",
     license="Apache License 2.0",
     url="https://github.com/music-assistant/aioslimproto",
     author="Marcel van der Veldt",
