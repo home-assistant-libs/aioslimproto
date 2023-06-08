@@ -23,7 +23,9 @@ async def start_discovery(
     """Start discovery for players."""
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
-        lambda: DiscoveryProtocol(ip_address, control_port, cli_port, cli_port_json, name, uuid),
+        lambda: DiscoveryProtocol(
+            ip_address, control_port, cli_port, cli_port_json, name, uuid
+        ),
         local_addr=("0.0.0.0", control_port),
     )
     return transport
@@ -119,7 +121,9 @@ class DiscoveryProtocol:
         # pylint: disable=unused-argument
         LOGGER.debug("Connection lost to discovery")
 
-    def build_tlv_response(self, requestdata: OrderedDict[str, str]) -> OrderedDict[str, str]:
+    def build_tlv_response(
+        self, requestdata: OrderedDict[str, str]
+    ) -> OrderedDict[str, str]:
         """Build TLV Response message."""
         responsedata = OrderedDict()
         for key in requestdata:

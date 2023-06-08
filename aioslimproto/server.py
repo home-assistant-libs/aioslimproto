@@ -10,7 +10,7 @@ from .cli import SlimProtoCLI
 from .client import SlimClient
 from .const import SLIMPROTO_PORT, EventType, SlimEvent
 from .discovery import start_discovery
-from .util import get_ip, get_hostname
+from .util import get_hostname, get_ip
 
 EventCallBackType = Callable[[SlimEvent], None]
 EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
@@ -24,7 +24,7 @@ class SlimServer:
         cli_port: Optional[int] = None,
         cli_port_json: Optional[int] = 0,
         ip_address: str | None = None,
-        name: str | None = None
+        name: str | None = None,
     ) -> None:
         """
         Initialize SlimServer instance.
@@ -68,7 +68,7 @@ class SlimServer:
                 SLIMPROTO_PORT,
                 self.cli.cli_port,
                 self.cli.cli_port_json,
-                self.name
+                self.name,
             ),
         ]
 
