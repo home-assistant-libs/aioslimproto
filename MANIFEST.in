@@ -1,6 +1,7 @@
-include README.md
-include requirements.txt
+include *.txt
+include *.ttf
+include README.rst
 include LICENSE
-include aioslimproto/font/
 graft aioslimproto
 recursive-exclude * *.py[co]
+recursive-exclude * *.DS_Store
