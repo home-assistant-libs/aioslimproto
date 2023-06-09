@@ -108,15 +108,17 @@ class CLIMessage:
             player_id = ""
             command = cmd_parts[0]
             command_str = raw
+            command_args = []
         else:
             player_id = cmd_parts[0]
             command = cmd_parts[1]
             command_str = raw.replace(player_id, "").strip()
+            command_args = cmd_parts[2:]
         return cls(
             player_id=player_id,
             command_str=command_str,
             command=command,
-            command_args=cmd_parts[1:],
+            command_args=command_args,
         )
 
 
