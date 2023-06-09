@@ -29,6 +29,8 @@ if TYPE_CHECKING:
     from .client import SlimClient
     from .server import SlimServer
 
+# ruff: noqa: ARG004,ARG002
+
 CHUNK_SIZE = 50
 
 
@@ -144,9 +146,7 @@ class JSONRPCMessage(CLIMessage):
         )
 
     @classmethod
-    def from_cometd(  # pylint: disable=redefined-builtin
-        cls, cometd_msg: dict
-    ) -> JSONRPCMessage:
+    def from_cometd(cls, cometd_msg: dict) -> JSONRPCMessage:  # pylint: disable=redefined-builtin
         """Parse a JSONRPCMessage from JSON."""
         return cls.from_json(
             id=cometd_msg.get("id", 0),
@@ -160,7 +160,7 @@ class SlimProtoCLI:
 
     def __init__(
         self,
-        server: "SlimServer",
+        server: SlimServer,
         cli_port: int | None = None,
         cli_port_json: int | None = 0,
     ) -> None:
@@ -185,22 +185,14 @@ class SlimProtoCLI:
             self.cli_port_json = await select_free_port(9000, 9089)
         servers: list[asyncio.Server] = []
         if self.cli_port is not None:
-            self.logger.info(
-                "Starting (legacy/telnet) SLIMProto CLI on port %s", self.cli_port
-            )
+            self.logger.info("Starting (legacy/telnet) SLIMProto CLI on port %s", self.cli_port)
             servers.append(
-                await asyncio.start_server(
-                    self._handle_telnet_client, "0.0.0.0", self.cli_port
-                )
+                await asyncio.start_server(self._handle_telnet_client, "0.0.0.0", self.cli_port)
             )
         if self.cli_port_json is not None:
-            self.logger.info(
-                "Starting SLIMProto JSON RPC CLI on port %s", self.cli_port_json
-            )
+            self.logger.info("Starting SLIMProto JSON RPC CLI on port %s", self.cli_port_json)
             servers.append(
-                await asyncio.start_server(
-                    self._handle_json_client, "0.0.0.0", self.cli_port_json
-                )
+                await asyncio.start_server(self._handle_json_client, "0.0.0.0", self.cli_port_json)
             )
         return servers
 
@@ -239,7 +231,7 @@ class SlimProtoCLI:
     @staticmethod
     async def handle_pause(player: SlimClient, args: list[str]) -> None:
         """Handle pause command."""
-        if args:
+        if args:  # noqa: SIM108
             should_pause = bool(args[0])
         else:
             # without args = toggle
@@ -262,9 +254,7 @@ class SlimProtoCLI:
         else:
             await player.power(bool(args[0]))
 
-    async def handle_players(
-        self, player: SlimClient | None, args: list[str]
-    ) -> PlayersMessage:
+    async def handle_players(self, player: SlimClient | None, args: list[str]) -> PlayersMessage:
         """Handle players command."""
         return {
             "players_loop": [
@@ -313,9 +303,7 @@ class SlimProtoCLI:
             "other_players_loop": [],
         }
 
-    async def handle_menu(
-        self, player: SlimClient | None, args: list[str]
-    ) -> dict[str, Any]:
+    async def handle_menu(self, player: SlimClient | None, args: list[str]) -> dict[str, Any]:
         """Handle menu request from CLI."""
         return {
             "item_loop": [],
@@ -410,18 +398,14 @@ class SlimProtoCLI:
             head, body = request.split("\r\n\r\n", 1)
             headers = head.split("\r\n")
             method, path, _ = headers[0].split(" ")
-            self.logger.debug(
-                "Client request on JSON RPC: %s %s -- %s", method, path, body
-            )
+            self.logger.debug("Client request on JSON RPC: %s %s -- %s", method, path, body)
 
             # regular json rpc request
             if path == "/jsonrpc.js":
                 json_msg = json.loads(body)
                 rpc_msg = JSONRPCMessage.from_json(**json_msg)
                 result = await self._handle_cli_message(rpc_msg)
-                await self.send_json_response(
-                    writer, data={**json_msg, "result": result}
-                )
+                await self.send_json_response(writer, data={**json_msg, "result": result})
                 return
 
             # cometd request (used by jive interface)
@@ -430,7 +414,7 @@ class SlimProtoCLI:
                     json_msg = json.loads(body)
                 except json.JSONDecodeError:
                     return
-                # forward cometd to seperate handler as it is slightly more involved
+                # forward cometd to separate handler as it is slightly more involved
                 await self._handle_cometd_client(json_msg, writer)
                 return
 
@@ -451,6 +435,7 @@ class SlimProtoCLI:
 
         https://github.com/Logitech/slimserver/blob/public/8.4/Slim/Web/Cometd.pm
         """
+        # ruff: noqa: PLR0915
         responses = []
         is_subscribe_connection = False
         clientid = ""
@@ -487,9 +472,7 @@ class SlimProtoCLI:
             elif channel in ("/meta/connect", "/meta/reconnect"):
                 # (re)connect message
                 self.logger.debug("CometD Client (re-)connected: %s", clientid)
-                response["timestamp"] = time.strftime(
-                    "%a, %d %b %Y %H:%M:%S %Z", time.gmtime()
-                )
+                response["timestamp"] = time.strftime("%a, %d %b %Y %H:%M:%S %Z", time.gmtime())
                 response["advice"] = {"interval": 5000}
 
             elif channel == "/meta/subscribe":
@@ -526,14 +509,10 @@ class SlimProtoCLI:
             return
 
         # send headers only
-        await self.send_status_response(
-            writer, 200, headers={"Transfer-Encoding": "chunked"}
-        )
+        await self.send_status_response(writer, 200, headers={"Transfer-Encoding": "chunked"})
         # the subscription connection is kept open and events are streamed to the client
         data = json.dumps(responses)
-        writer.write(
-            f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode("iso-8859-1")
-        )
+        writer.write(f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode("iso-8859-1"))
         await writer.drain()
 
         # as some sort of heartbeat, the server- and playerstatus is sent every 30 seconds
@@ -573,9 +552,7 @@ class SlimProtoCLI:
                 # make sure we always send an array of messages
                 data = json.dumps([msg])
                 writer.write(
-                    f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode(
-                        "iso-8859-1"
-                    )
+                    f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode("iso-8859-1")
                 )
                 try:
                     await writer.drain()

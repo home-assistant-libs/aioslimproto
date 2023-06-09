@@ -13,8 +13,9 @@ import socket
 import struct
 import time
 from asyncio import StreamReader, StreamWriter, create_task
+from collections.abc import Callable
 from enum import Enum, IntEnum
-from typing import Callable, Dict, List, TypedDict
+from typing import TypedDict
 from urllib.parse import parse_qsl, urlparse
 
 from async_timeout import timeout
@@ -26,6 +27,9 @@ from .errors import UnsupportedContentType
 from .util import parse_capabilities, parse_headers
 from .visualisation import SpectrumAnalyser, VisualisationType
 from .volume import SlimProtoVolume
+
+# pylint: disable=unused-argument
+# ruff: noqa: ARG002
 
 # from http://wiki.slimdevices.com/index.php/SlimProtoTCPProtocol#HELO
 DEVICE_TYPE = {
@@ -220,7 +224,7 @@ class SlimClient:
         self._writer = writer
         self._player_id: str = ""
         self._device_type: str = ""
-        self._capabilities: Dict[str, str] = {}
+        self._capabilities: dict[str, str] = {}
         self._device_name: str = ""
         self._volume_control = SlimProtoVolume()
         self._display_control = SlimProtoDisplay()
@@ -268,9 +272,7 @@ class SlimClient:
     @property
     def device_model(self) -> str:
         """Return device model of the player."""
-        return self._capabilities.get(
-            "ModelName", self._capabilities.get("Model", FALLBACK_MODEL)
-        )
+        return self._capabilities.get("ModelName", self._capabilities.get("Model", FALLBACK_MODEL))
 
     @property
     def max_sample_rate(self) -> int:
@@ -278,7 +280,7 @@ class SlimClient:
         return self._capabilities.get("MaxSampleRate", FALLBACK_SAMPLE_RATE)
 
     @property
-    def supported_codecs(self) -> List[str]:
+    def supported_codecs(self) -> list[str]:
         """Return supported codecs by the player."""
         return self._capabilities.get("SupportedCodecs", FALLBACK_CODECS)
 
@@ -328,13 +330,11 @@ class SlimClient:
     @property
     def elapsed_milliseconds(self) -> int:
         """Return (realtime) elapsed time of current playing media in milliseconds."""
-        if not self.state == PlayerState.PLAYING:
+        if self.state != PlayerState.PLAYING:
             return self._elapsed_milliseconds
         # if the player is playing we return a very accurate timestamp
         # which in turn can be used by consumers to sync players etc.
-        return self._elapsed_milliseconds + int(
-            (time.time() - self._last_timestamp) * 1000
-        )
+        return self._elapsed_milliseconds + int((time.time() - self._last_timestamp) * 1000)
 
     @property
     def jiffies(self) -> int:
@@ -521,9 +521,7 @@ class SlimClient:
         assert 0 <= level <= 4
         await self._send_frame(b"grfb", struct.pack("!H", level))
 
-    async def set_visualisation(
-        self, visualisation: VisualisationType | None = None
-    ) -> None:
+    async def set_visualisation(self, visualisation: VisualisationType | None = None) -> None:
         """Set Visualisation engine on player."""
         if visualisation is None:
             visualisation = SpectrumAnalyser()
@@ -572,9 +570,7 @@ class SlimClient:
         """Send periodic heartbeat message to player."""
         while self.connected:
             self._last_heartbeat = heartbeat_id = self._last_heartbeat + 1
-            await self.send_strm(
-                b"t", autostart=b"0", flags=0, replay_gain=heartbeat_id
-            )
+            await self.send_strm(b"t", autostart=b"0", flags=0, replay_gain=heartbeat_id)
             await asyncio.sleep(5)
 
     async def _send_frame(self, command: bytes, data: bytes) -> None:
@@ -618,13 +614,11 @@ class SlimClient:
                     else:
                         asyncio.get_running_loop().call_soon(handler, packet)
         # EOF reached: socket is disconnected
-        self.logger.debug(
-            "Socket disconnected: %s", self._writer.get_extra_info("peername")
-        )
+        self.logger.debug("Socket disconnected: %s", self._writer.get_extra_info("peername"))
         self.callback(EventType.PLAYER_DISCONNECTED, self)
         self.disconnect()
 
-    async def send_strm(
+    async def send_strm(  # noqa: PLR0913
         self,
         command=b"q",
         autostart=b"0",
@@ -788,7 +782,7 @@ class SlimClient:
     def _process_stat_audg(self, data: bytes) -> None:
         """Process incoming stat AUDg message."""
         # srtm-s command received.
-        # Some players may send this as aknowledge of volume change (audg command).
+        # Some players may send this as acknowledge of volume change (audg command).
 
     def _process_stat_stmc(self, data: bytes) -> None:
         """Process incoming stat STMc message (connected)."""
@@ -798,13 +792,11 @@ class SlimClient:
 
     def _process_stat_stmd(self, data: bytes) -> None:
         """Process incoming stat STMd message (decoder ready)."""
-        # pylint: disable=unused-argument
         self.logger.debug("STMd received - decoder ready.")
         self.callback(EventType.PLAYER_DECODER_READY, self)
 
     def _process_stat_stmf(self, data: bytes) -> None:
         """Process incoming stat STMf message (connection closed)."""
-        # pylint: disable=unused-argument
         self.logger.debug("STMf received - connection closed.")
         self._state = PlayerState.STOPPED
         self.callback(EventType.PLAYER_UPDATED, self)
@@ -815,25 +807,21 @@ class SlimClient:
 
         No more decoded (uncompressed) data to play; triggers rebuffering.
         """
-        # pylint: disable=unused-argument
         self.logger.debug("STMo received - output underrun.")
 
     def _process_stat_stmp(self, data: bytes) -> None:
         """Process incoming stat STMp message: Pause confirmed."""
-        # pylint: disable=unused-argument
         self.logger.debug("STMp received - pause confirmed.")
         self._state = PlayerState.PAUSED
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stmr(self, data: bytes) -> None:
         """Process incoming stat STMr message: Resume confirmed."""
-        # pylint: disable=unused-argument
         self.logger.debug("STMr received - resume confirmed.")
         self._state = PlayerState.PLAYING
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stms(self, data: bytes) -> None:
-        # pylint: disable=unused-argument
         """Process incoming stat STMs message: Playback of new track has started."""
         self.logger.debug("STMs received - playback of new track has started")
         self._state = PlayerState.PLAYING
@@ -871,7 +859,6 @@ class SlimClient:
 
     def _process_stat_stmu(self, data: bytes) -> None:
         """Process incoming stat STMu message: Buffer underrun: Normal end of playback."""
-        # pylint: disable=unused-argument
         self.logger.debug("STMu received - end of playback.")
         self._state = PlayerState.STOPPED
         # invalidate url/metadata
@@ -883,7 +870,6 @@ class SlimClient:
 
     def _process_stat_stml(self, data: bytes) -> None:
         """Process incoming stat STMl message: Buffer threshold reached."""
-        # pylint: disable=unused-argument
         self.logger.debug("STMl received - Buffer threshold reached.")
         # this is only used when autostart < 2 on strm-s commands
         # send an event for lib consumers to handle
@@ -892,7 +878,6 @@ class SlimClient:
 
     def _process_stat_stmn(self, data: bytes) -> None:
         """Process incoming stat STMn message: player couldn't decode stream."""
-        # pylint: disable=unused-argument
         self.logger.debug("STMn received - player couldn't decode stream.")
         self.callback(EventType.PLAYER_DECODER_ERROR, self)
 
@@ -916,9 +901,7 @@ class SlimClient:
             codc_msg = self._parse_codc(content_type)
 
             # send the codc message to the player to inform about the codec that needs to be used
-            self.logger.debug(
-                "send CODC for contenttype %s: %s", content_type, codc_msg
-            )
+            self.logger.debug("send CODC for contenttype %s: %s", content_type, codc_msg)
             await self._send_frame(b"codc", codc_msg)
 
         # send continue (used when autoplay 1 or 3)
@@ -938,10 +921,7 @@ class SlimClient:
         if "wav" in content_type or "pcm" in content_type:
             # wave header may contain info about sample rate etc
             # https://www.dialogic.com/webhelp/CSP1010/VXML1.1CI/WebHelp/standards_defaults%20-%20MIME%20Type%20Mapping.htm
-            if ";" in content_type:
-                params = dict(parse_qsl(content_type.replace(";", "&")))
-            else:
-                params = {}
+            params = dict(parse_qsl(content_type.replace(";", "&"))) if ";" in content_type else {}
             sample_rate = int(params.get("rate", 44100))
             sample_size = int(params.get("bitrate", 16))
             channels = int(params.get("channels", 2))

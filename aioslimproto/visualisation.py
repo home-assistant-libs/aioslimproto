@@ -7,7 +7,6 @@ https://github.com/winjer/squeal/blob/master/src/squeal/player/display.py
 from __future__ import annotations
 
 import struct
-from typing import Union
 
 # pylint: disable=missing-class-docstring,invalid-name
 
@@ -107,17 +106,11 @@ class SpectrumAnalyser:
 
     def pack(self):
         """Pack data for sending."""
-        if self.channels == self.Channel.stereo:
-            count = 3 + 8 + 8
-        else:
-            count = 3
+        count = 3 + 8 + 8 if self.channels == self.Channel.stereo else 3
         header = struct.pack("!BB", self.which, count)
         basic = struct.pack("!III", self.channels, self.bandwidth, self.preemphasis)
         left = self.left.pack()
-        if self.channels == self.Channel.stereo:
-            right = self.right.pack()
-        else:
-            right = ""
+        right = self.right.pack() if self.channels == self.Channel.stereo else ""
         return header + basic + left + right
 
 
@@ -161,4 +154,4 @@ class VUMeter:
         self.right = right
 
 
-VisualisationType = Union[NoVisualisation, SpectrumAnalyser, VUMeter]
+VisualisationType = NoVisualisation | SpectrumAnalyser | VUMeter

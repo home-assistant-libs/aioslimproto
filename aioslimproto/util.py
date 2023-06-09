@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import parse_qsl
 
 from .const import FALLBACK_CODECS
@@ -52,7 +52,7 @@ async def select_free_port(range_start: int, range_end: int) -> int:
     return await asyncio.get_running_loop().run_in_executor(None, _select_free_port)
 
 
-def parse_capabilities(helo_data: bytes) -> Dict[str, Any]:
+def parse_capabilities(helo_data: bytes) -> dict[str, Any]:
     """Try to parse device capabilities from HELO string."""
     # b"\x0c\x00\xb8'\xeb:D\xa2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     # x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00Model=squeezelite,
@@ -77,14 +77,12 @@ def parse_capabilities(helo_data: bytes) -> Dict[str, Any]:
         # I have no idea if this message is the same for all device types
         # so a big try..except around it
 
-        logging.getLogger(__name__).exception(
-            "Error while parsing device info", exc_info=exc
-        )
+        logging.getLogger(__name__).exception("Error while parsing device info", exc_info=exc)
         logging.getLogger(__name__).debug(helo_data)
     return params
 
 
-def parse_headers(resp_data: bytes) -> Dict[str, str]:
+def parse_headers(resp_data: bytes) -> dict[str, str]:
     """Parse headers from raw (HTTP) response message."""
     result = {}
     raw_headers: str = resp_data.decode().split("\r\n")[1:]

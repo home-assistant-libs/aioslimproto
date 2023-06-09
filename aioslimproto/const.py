@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class EventType(Enum):
@@ -27,7 +27,7 @@ class SlimEvent:
 
     type: EventType
     player_id: str
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 
 SLIMPROTO_PORT = 3483

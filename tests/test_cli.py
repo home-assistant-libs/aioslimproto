@@ -34,9 +34,7 @@ def test_json_msg_instantiation():
     assert msg.command_str == "mixer volume 50"
 
     # No command args
-    msg = cli.JSONRPCMessage.from_json(
-        id=1, method="method", params=["aa:b:cc:dd:ee", ["pause"]]
-    )
+    msg = cli.JSONRPCMessage.from_json(id=1, method="method", params=["aa:b:cc:dd:ee", ["pause"]])
     assert msg.id == 1
     assert msg.method == "method"
     assert msg.player_id == "aa:b:cc:dd:ee"
