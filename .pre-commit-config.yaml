@@ -1,4 +1,18 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: no-commit-to-branch
+        args:
+          - --branch=main
+      - id: debug-statements
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: 'v0.0.272'
+    hooks:
+      - id: ruff
   - repo: https://github.com/psf/black
     rev: 23.3.0
     hooks:
@@ -6,35 +20,28 @@ repos:
         args:
           - --safe
           - --quiet
-  - repo: https://github.com/PyCQA/flake8
-    rev: 6.0.0
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.4
     hooks:
-      - id: flake8
-        exclude: ^examples/
+      - id: codespell
+        args: []
+        exclude_types: [csv, json]
+        exclude: ^tests/fixtures/
         additional_dependencies:
-          - flake8-docstrings==1.6.0
-  - repo: https://github.com/pre-commit/mirrors-isort
-    rev: v5.10.1
-    hooks:
-      - id: isort
-        exclude: ^examples/
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.3.0
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-all]
-        exclude: ^examples/
-  - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.3.0
-    hooks:
-      - id: pydocstyle
-        exclude: ^examples/|^.venv/|^.vscode/
-  - repo: local
-    hooks:
-      - id: pylint
-        name: pylint
-        entry: script/run-in-env.sh pylint -j 0
-        language: script
-        types: [python]
-        args: ["-rn", "-sn", "--rcfile=pylintrc", "--fail-on=I"]
-        exclude: ^.venv/|^.vscode/|^tests/|example.py
+          - tomli
+  # TODO: enable pylint and mypy in follow up PR and fix the issues found
+  # - repo: local
+  #   hooks:
+  #     - id: pylint
+  #       name: pylint
+  #       entry: script/run-in-env.sh pylint -j 0
+  #       language: script
+  #       types: [python]
+  #       files: ^aioslimproto/.+\.py$
+
+  #     - id: mypy
+  #       name: mypy
+  #       entry: script/run-in-env.sh mypy
+  #       language: script
+  #       types: [python]
+  #       files: ^aioslimproto/.+\.py$

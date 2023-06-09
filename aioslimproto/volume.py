@@ -121,12 +121,8 @@ class SlimProtoVolume:
 
     # new gain parameters, from the same place
     total_volume_range = -50  # dB
-    step_point = (
-        -1
-    )  # Number of steps, up from the bottom, where a 2nd volume ramp kicks in.
-    step_fraction = (
-        1  # fraction of totalVolumeRange where alternate volume ramp kicks in.
-    )
+    step_point = -1  # Number of steps, up from the bottom, where a 2nd volume ramp kicks in.
+    step_fraction = 1  # fraction of totalVolumeRange where alternate volume ramp kicks in.
 
     def __init__(self):
         """Initialize class."""

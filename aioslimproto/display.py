@@ -17,7 +17,7 @@ fontdir = os.path.join(os.path.dirname(__file__), "font")
 
 
 class Font:
-    """Respresentation of a font for Slimproto displays."""
+    """Representation of a font for Slimproto displays."""
 
     def __init__(self, name):  # noqa
         self.filename = os.path.join(fontdir, name + ".ttf")
@@ -27,8 +27,8 @@ class Font:
         """Return a PIL image with this string rendered into it."""
         self.cache.setdefault(size, ImageFont.truetype(self.filename, size))
         font = self.cache[size]
-        siz = font.getsize(s)
-        im = Image.new("RGB", siz)
+        _size = font.getsize(s)
+        im = Image.new("RGB", _size)
         draw = ImageDraw.Draw(im)
         draw.text((0, 0), s, font=font)
         return im
@@ -77,13 +77,13 @@ class SlimProtoDisplay:
         """Clear the display."""
         self.image.paste(0, (0, 0, 320, 32))
 
-    def availableFonts(self):
+    def availableFonts(self):  # noqa: N802
         """Return available fonts."""
         for f in os.listdir(fontdir):
             if f.endswith(".ttf"):
                 yield f[: -len(".ttf")]
 
-    def renderText(self, text, fontName, size, position):
+    def renderText(self, text, fontName, size, position):  # noqa: N802, N803
         """Render given text on display."""
         font = self.fonts[fontName]
         im = font.render(text, size)

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from types import TracebackType
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any
 
 from .cli import SlimProtoCLI
 from .client import SlimClient
@@ -13,7 +14,7 @@ from .discovery import start_discovery
 from .util import get_hostname, get_ip
 
 EventCallBackType = Callable[[SlimEvent], None]
-EventSubscriptionType = Tuple[EventCallBackType, Tuple[EventType], Tuple[str]]
+EventSubscriptionType = tuple[EventCallBackType, tuple[EventType], tuple[str]]
 
 
 class SlimServer:
@@ -21,8 +22,8 @@ class SlimServer:
 
     def __init__(
         self,
-        cli_port: Optional[int] = None,
-        cli_port_json: Optional[int] = 0,
+        cli_port: int | None = None,
+        cli_port_json: int | None = 0,
         ip_address: str | None = None,
         name: str | None = None,
     ) -> None:
@@ -30,8 +31,9 @@ class SlimServer:
         Initialize SlimServer instance.
 
         Params:
-        - cli_port: Optionally start a simple Telnet CLI server on this port for compatability
-        with players relying on the server providing this feature. None to disable, 0 for autoselect.
+        - cli_port: Optionally start a simple Telnet CLI server on this port for compatibility
+           with players relying on the server providing this feature.
+           None to disable, 0 for autoselect.
         - cli_port_json: Same as cli port but it's newer JSON RPC equivalent.
         - ip_address: IP to broadcast to clients to discover this server, None for autoselect.
         - name: Name to broadcast to clients to discover this server, None for autoselect.
@@ -40,12 +42,12 @@ class SlimServer:
         self.ip_address = ip_address or get_ip()
         self.name = name or get_hostname()
         self.cli = SlimProtoCLI(self, cli_port, cli_port_json)
-        self._subscribers: List[EventSubscriptionType] = []
-        self._socket_servers: List[Union[asyncio.Server, asyncio.BaseTransport]] = []
-        self._players: Dict[str, SlimClient] = {}
+        self._subscribers: list[EventSubscriptionType] = []
+        self._socket_servers: list[asyncio.Server | asyncio.BaseTransport] = []
+        self._players: dict[str, SlimClient] = {}
 
     @property
-    def players(self) -> List[SlimClient]:
+    def players(self) -> list[SlimClient]:
         """Return all registered players."""
         return list(self._players.values())
 
@@ -88,11 +90,7 @@ class SlimServer:
             :param event_details: optional details to send with the event.
         """
         for cb_func, event_filter, player_filter in self._subscribers:
-            if (
-                event.player_id
-                and player_filter
-                and event.player_id not in player_filter
-            ):
+            if event.player_id and player_filter and event.player_id not in player_filter:
                 continue
             if event_filter and event.type not in event_filter:
                 continue
@@ -104,8 +102,8 @@ class SlimServer:
     def subscribe(
         self,
         cb_func: EventCallBackType,
-        event_filter: Union[EventType, Tuple[EventType], None] = None,
-        player_filter: Union[str, Tuple[str], None] = None,
+        event_filter: EventType | tuple[EventType] | None = None,
+        player_filter: str | tuple[str] | None = None,
     ) -> Callable:
         """
         Subscribe to events from Slimclients.
@@ -139,9 +137,7 @@ class SlimServer:
         addr = writer.get_extra_info("peername")
         self.logger.debug("Socket client connected: %s", addr)
 
-        def client_callback(
-            event_type: EventType, client: SlimClient, data: Any = None
-        ):
+        def client_callback(event_type: EventType, client: SlimClient, data: Any = None):
             player_id = client.player_id
 
             if event_type == EventType.PLAYER_DISCONNECTED:
@@ -163,17 +159,17 @@ class SlimServer:
 
         SlimClient(reader, writer, client_callback)
 
-    async def __aenter__(self) -> "SlimServer":
+    async def __aenter__(self) -> SlimServer:
         """Return Context manager."""
         await self.start()
         return self
 
     async def __aexit__(
         self,
-        exc_type: Type[BaseException],
+        exc_type: type[BaseException],
         exc_val: BaseException,
         exc_tb: TracebackType,
-    ) -> Optional[bool]:
+    ) -> bool | None:
         """Exit context manager."""
         await self.stop()
         if exc_val:

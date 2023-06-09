@@ -7,6 +7,8 @@ from sys import path
 path.insert(1, dirname(dirname(abspath(__file__))))
 
 # pylint: disable=wrong-import-position
+import contextlib  # noqa: E402
+
 from aioslimproto import SlimServer  # noqa: E402
 from aioslimproto.const import EventType, SlimEvent  # noqa: E402
 
@@ -27,9 +29,7 @@ async def main():
     async def on_event(evt: SlimEvent):
         if evt.type == EventType.PLAYER_HEARTBEAT:
             return  # too spammy
-        LOGGER.debug(
-            f"Received event {evt.type.value} from player {evt.player_id}: {evt.data}"
-        )
+        LOGGER.debug(f"Received event {evt.type.value} from player {evt.player_id}: {evt.data}")
 
     server.subscribe(on_event)
 
@@ -46,7 +46,5 @@ async def main():
     await asyncio.sleep(3600)
 
 
-try:
+with contextlib.suppress(KeyboardInterrupt):
     asyncio.run(main())
-except KeyboardInterrupt:
-    pass
