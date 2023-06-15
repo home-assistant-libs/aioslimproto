@@ -20,9 +20,8 @@ from urllib.parse import parse_qsl, urlparse
 
 from async_timeout import timeout
 
-from aioslimproto.display import SlimProtoDisplay
-
 from .const import FALLBACK_CODECS, EventType
+from .display import SlimProtoDisplay
 from .errors import UnsupportedContentType
 from .util import parse_capabilities, parse_headers
 from .visualisation import SpectrumAnalyser, VisualisationType
@@ -344,7 +343,6 @@ class SlimClient:
     async def stop(self) -> None:
         """Send stop command to player."""
         await self.send_strm(b"q", flags=0)
-        await self.set_display()
         # some players do not update their state by event so we force it here
         if self._state != PlayerState.STOPPED:
             self._state = PlayerState.STOPPED
@@ -382,7 +380,6 @@ class SlimClient:
         await self._send_frame(b"aude", struct.pack("2B", power_int, 1))
         self._powered = powered
         self.callback(EventType.PLAYER_UPDATED, self)
-        await self.set_display()
 
     async def toggle_power(self) -> None:
         """Toggle power command."""
@@ -514,7 +511,6 @@ class SlimClient:
             flags=0x20 if scheme == "https" else 0x00,
             httpreq=httpreq,
         )
-        await self.set_display()
 
     async def set_brightness(self, level=4):
         """Set brightness command on (supported) display."""
@@ -532,7 +528,7 @@ class SlimClient:
         data = await asyncio.get_running_loop().run_in_executor(None, _handle)
         await self._send_frame(b"visu", data)
 
-    async def render(
+    async def render_display_text(
         self,
         text: str,
         size: int = 16,
@@ -547,19 +543,9 @@ class SlimClient:
             return self._display_control.frame()
 
         bitmap = await asyncio.get_running_loop().run_in_executor(None, _render)
-        await self._update_display(bitmap)
+        await self.update_display(bitmap)
 
-    async def set_display(self) -> None:
-        """Render default text on player display."""
-        await self.set_visualisation()
-        if not self.powered:
-            await self.render("")
-        elif self._next_metadata and "title" in self._next_metadata:
-            await self.render(self._next_metadata["title"])
-        else:
-            await self.render(self.name)
-
-    async def _update_display(
+    async def update_display(
         self, bitmap: bytes, transition: str = "c", offset: int = 0, param: int = 0
     ) -> None:
         """Update display of (supported) slimproto client."""
@@ -667,8 +653,6 @@ class SlimClient:
         # Set some startup settings for the player
         await self._send_frame(b"vers", b"7.999.999")
         await self.stop()
-        await self.set_brightness()
-        await self.set_visualisation()
         await self._send_frame(b"setd", struct.pack("B", 0))
         await self._send_frame(b"setd", struct.pack("B", 4))
         await self.stop()
@@ -678,7 +662,6 @@ class SlimClient:
         await self.power(self._powered)
         await self.volume_set(self.volume_level)
         self._connected = True
-        await self.set_display()
         self._heartbeat_task = asyncio.create_task(self._send_heartbeat())
         self.callback(EventType.PLAYER_CONNECTED, self)
 
