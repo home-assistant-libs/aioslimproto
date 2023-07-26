@@ -25,10 +25,13 @@ class Font:
 
     def render(self, s, size=15):
         """Return a PIL image with this string rendered into it."""
-        self.cache.setdefault(size, ImageFont.truetype(self.filename, size))
-        font = self.cache[size]
-        _size = font.getsize(s)
-        im = Image.new("RGB", _size)
+        if size not in self.cache:
+            self.cache[size] = ImageFont.truetype(self.filename, size)
+        font: ImageFont.FreeTypeFont = self.cache[size]
+        bbox = font.getbbox(s)
+        width = abs(bbox[0] - bbox[2])
+        height = abs(bbox[1] - bbox[3])
+        im = Image.new("RGB", (width, height))
         draw = ImageDraw.Draw(im)
         draw.text((0, 0), s, font=font)
         return im

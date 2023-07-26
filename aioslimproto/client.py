@@ -20,9 +20,8 @@ from urllib.parse import parse_qsl, urlparse
 
 from async_timeout import timeout
 
-from aioslimproto.display import SlimProtoDisplay
-
 from .const import FALLBACK_CODECS, EventType
+from .display import SlimProtoDisplay
 from .errors import UnsupportedContentType
 from .util import parse_capabilities, parse_headers
 from .visualisation import SpectrumAnalyser, VisualisationType
@@ -238,6 +237,7 @@ class SlimClient:
         self._next_metadata: Metadata | None = None
         self._connected: bool = False
         self._last_heartbeat = 0
+        self._auto_play: bool = False
         self._reader_task = create_task(self._socket_reader())
         self._heartbeat_task: asyncio.Task | None = None
 
@@ -344,7 +344,6 @@ class SlimClient:
     async def stop(self) -> None:
         """Send stop command to player."""
         await self.send_strm(b"q", flags=0)
-        await self.set_display()
         # some players do not update their state by event so we force it here
         if self._state != PlayerState.STOPPED:
             self._state = PlayerState.STOPPED
@@ -382,7 +381,6 @@ class SlimClient:
         await self._send_frame(b"aude", struct.pack("2B", power_int, 1))
         self._powered = powered
         self.callback(EventType.PLAYER_UPDATED, self)
-        await self.set_display()
 
     async def toggle_power(self) -> None:
         """Toggle power command."""
@@ -486,7 +484,7 @@ class SlimClient:
             if ext in CODEC_MAPPING:
                 mime_type = ext
 
-        codec_details = self._parse_codc(mime_type)
+        codec_details = self._parse_codc(mime_type) if mime_type else b"?????"
 
         if port not in (80, 443, "80", "443"):
             host += f":{port}"
@@ -500,11 +498,11 @@ class SlimClient:
             b"Range: bytes=0-\r\n"
             b"\r\n" % (path.encode(), host.encode())
         )
-
+        self._auto_play = autostart
         await self.send_strm(
             command=b"s",
             codec_details=codec_details,
-            autostart=b"1" if autostart else b"0",
+            autostart=b"3" if autostart else b"0",
             server_port=port,
             server_ip=int(ipaddress.ip_address(ipaddr)),
             threshold=200,
@@ -514,7 +512,6 @@ class SlimClient:
             flags=0x20 if scheme == "https" else 0x00,
             httpreq=httpreq,
         )
-        await self.set_display()
 
     async def set_brightness(self, level=4):
         """Set brightness command on (supported) display."""
@@ -532,7 +529,7 @@ class SlimClient:
         data = await asyncio.get_running_loop().run_in_executor(None, _handle)
         await self._send_frame(b"visu", data)
 
-    async def render(
+    async def render_display_text(
         self,
         text: str,
         size: int = 16,
@@ -547,19 +544,9 @@ class SlimClient:
             return self._display_control.frame()
 
         bitmap = await asyncio.get_running_loop().run_in_executor(None, _render)
-        await self._update_display(bitmap)
+        await self.update_display(bitmap)
 
-    async def set_display(self) -> None:
-        """Render default text on player display."""
-        await self.set_visualisation()
-        if not self.powered:
-            await self.render("")
-        elif self._next_metadata and "title" in self._next_metadata:
-            await self.render(self._next_metadata["title"])
-        else:
-            await self.render(self.name)
-
-    async def _update_display(
+    async def update_display(
         self, bitmap: bytes, transition: str = "c", offset: int = 0, param: int = 0
     ) -> None:
         """Update display of (supported) slimproto client."""
@@ -623,11 +610,11 @@ class SlimClient:
         command=b"q",
         autostart=b"0",
         codec_details=b"p1321",
-        threshold=255,
+        threshold=0,
         spdif=b"0",
         trans_duration=0,
         trans_type=b"0",
-        flags=0x40,
+        flags=0x20,
         output_threshold=0,
         replay_gain=0,
         server_port=0,
@@ -667,8 +654,6 @@ class SlimClient:
         # Set some startup settings for the player
         await self._send_frame(b"vers", b"7.999.999")
         await self.stop()
-        await self.set_brightness()
-        await self.set_visualisation()
         await self._send_frame(b"setd", struct.pack("B", 0))
         await self._send_frame(b"setd", struct.pack("B", 4))
         await self.stop()
@@ -678,7 +663,6 @@ class SlimClient:
         await self.power(self._powered)
         await self.volume_set(self.volume_level)
         self._connected = True
-        await self.set_display()
         self._heartbeat_task = asyncio.create_task(self._send_heartbeat())
         self.callback(EventType.PLAYER_CONNECTED, self)
 
@@ -808,6 +792,10 @@ class SlimClient:
         No more decoded (uncompressed) data to play; triggers rebuffering.
         """
         self.logger.debug("STMo received - output underrun.")
+        if self._auto_play:
+            asyncio.create_task(self.stop())
+        else:
+            self.callback(EventType.PLAYER_OUTPUT_UNDERRUN, self)
 
     def _process_stat_stmp(self, data: bytes) -> None:
         """Process incoming stat STMp message: Pause confirmed."""
@@ -905,7 +893,8 @@ class SlimClient:
             await self._send_frame(b"codc", codc_msg)
 
         # send continue (used when autoplay 1 or 3)
-        # await self._send_frame(b"cont", b"1")
+        if self._auto_play:
+            await self._send_frame(b"cont", b"1")
 
     def _process_setd(self, data: bytes) -> None:
         """Process incoming SETD message: Get/set player firmware settings."""
