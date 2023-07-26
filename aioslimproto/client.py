@@ -483,7 +483,7 @@ class SlimClient:
             if ext in CODEC_MAPPING:
                 mime_type = ext
 
-        codec_details = self._parse_codc(mime_type)
+        codec_details = self._parse_codc(mime_type) if mime_type else b"?????"
 
         if port not in (80, 443, "80", "443"):
             host += f":{port}"
