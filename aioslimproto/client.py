@@ -237,6 +237,7 @@ class SlimClient:
         self._next_metadata: Metadata | None = None
         self._connected: bool = False
         self._last_heartbeat = 0
+        self._auto_play: bool = False
         self._reader_task = create_task(self._socket_reader())
         self._heartbeat_task: asyncio.Task | None = None
 
@@ -497,11 +498,11 @@ class SlimClient:
             b"Range: bytes=0-\r\n"
             b"\r\n" % (path.encode(), host.encode())
         )
-
+        self._auto_play = autostart
         await self.send_strm(
             command=b"s",
             codec_details=codec_details,
-            autostart=b"1" if autostart else b"0",
+            autostart=b"3" if autostart else b"0",
             server_port=port,
             server_ip=int(ipaddress.ip_address(ipaddr)),
             threshold=200,
@@ -609,11 +610,11 @@ class SlimClient:
         command=b"q",
         autostart=b"0",
         codec_details=b"p1321",
-        threshold=255,
+        threshold=0,
         spdif=b"0",
         trans_duration=0,
         trans_type=b"0",
-        flags=0x40,
+        flags=0x20,
         output_threshold=0,
         replay_gain=0,
         server_port=0,
@@ -888,7 +889,8 @@ class SlimClient:
             await self._send_frame(b"codc", codc_msg)
 
         # send continue (used when autoplay 1 or 3)
-        # await self._send_frame(b"cont", b"1")
+        if self._auto_play:
+            await self._send_frame(b"cont", b"1")
 
     def _process_setd(self, data: bytes) -> None:
         """Process incoming SETD message: Get/set player firmware settings."""
