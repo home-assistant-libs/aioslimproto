@@ -792,6 +792,10 @@ class SlimClient:
         No more decoded (uncompressed) data to play; triggers rebuffering.
         """
         self.logger.debug("STMo received - output underrun.")
+        if self._auto_play:
+            asyncio.create_task(self.stop())
+        else:
+            self.callback(EventType.PLAYER_OUTPUT_UNDERRUN, self)
 
     def _process_stat_stmp(self, data: bytes) -> None:
         """Process incoming stat STMp message: Pause confirmed."""
