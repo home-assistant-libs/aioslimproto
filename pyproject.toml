@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aioslimproto"
-version = "2.3.2"
+version = "2.3.3"
 license     = {text = "Apache-2.0"}
 description = "Python module to talk to Logitech Squeezebox players directly (without Logitech server)."
 readme = "README.md"
