@@ -181,7 +181,7 @@ FORMAT_BYTE = {
     "mp3": b"m",
     "flc": b"f",
     "wma": b"w",
-    "ogg": b"0",
+    "ogg": b"o",
     "aac": b"a",
     "alc": b"l",
     "dsf": b"p",
