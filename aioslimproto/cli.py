@@ -12,6 +12,7 @@ the Logitech Media Server.
 https://github.com/elParaguayo/LMS-CLI-Documentation/blob/master/LMS-CLI.md
 https://gist.github.com/samtherussell/335bf9ba75363bd167d2470b8689d9f2
 """
+
 from __future__ import annotations
 
 import asyncio

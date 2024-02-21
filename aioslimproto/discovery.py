@@ -1,4 +1,5 @@
 """Logic for slimproto clients to discover our (emulated) server on the local network."""
+
 from __future__ import annotations
 
 import asyncio

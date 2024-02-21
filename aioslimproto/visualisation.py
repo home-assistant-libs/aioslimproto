@@ -4,6 +4,7 @@ Manage the visualisation of a SlimProto based player.
 Copyright 2010 Doug Winter
 https://github.com/winjer/squeal/blob/master/src/squeal/player/display.py
 """
+
 from __future__ import annotations
 
 import struct
