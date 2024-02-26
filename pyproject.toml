@@ -37,7 +37,7 @@ test = [
 ]
 
 [tool.black]
-target-version = ['py311']
+target-version = ['py310']
 line-length = 100
 
 [tool.codespell]
@@ -92,7 +92,7 @@ ignore = ["PLR2004", "N818"]
 extend-exclude = ["app_vars.py"]
 unfixable = ["F841"]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 
 [tool.ruff.flake8-annotations]
 allow-star-arg-any = true
