@@ -4,6 +4,7 @@ Socketclient implementation for SLIMproto client (e.g. Squeezebox).
 Large parts of this code are based on code by Doug Winter, all rights reserved.
 https://github.com/winjer/squeal/blob/master/src/squeal/net/slimproto.py
 """
+
 from __future__ import annotations
 
 import asyncio

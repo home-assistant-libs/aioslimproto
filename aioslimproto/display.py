@@ -6,6 +6,7 @@ Provides support for rendering text using local truetype fonts.
 Copyright 2010 Doug Winter
 https://github.com/winjer/squeal/blob/master/src/squeal/player/display.py
 """
+
 import os
 import struct
 
