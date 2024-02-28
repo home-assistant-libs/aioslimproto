@@ -783,8 +783,6 @@ class SlimClient:
     def _process_stat_stmf(self, data: bytes) -> None:
         """Process incoming stat STMf message (connection closed)."""
         self.logger.debug("STMf received - connection closed.")
-        self._state = PlayerState.STOPPED
-        self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stmo(self, data: bytes) -> None:
         """
