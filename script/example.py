@@ -32,7 +32,7 @@ async def main():
     await asyncio.sleep(10)
     # send play request to a test player
     for player in server.players:
-        if player.player_id != "00:04:20:2d:6c:c6":
+        if player.player_id != "94:b5:55:38:2a:a0":
             continue
         await player.power(True)
         await player.volume_set(10)
