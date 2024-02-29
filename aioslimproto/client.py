@@ -236,6 +236,9 @@ class SlimClient:
         self._elapsed_milliseconds: float = 0
         self._next_url: str | None = None
         self._next_metadata: Metadata | None = None
+        self._next_transition: TransitionType = (TransitionType.NONE,)
+        self._next_transition_duration: int = (0,)
+        self._next_mime_type: str | None = None
         self._connected: bool = False
         self._last_heartbeat = 0
         self._auto_play: bool = False
@@ -432,21 +435,39 @@ class SlimClient:
         url: str,
         mime_type: str | None = None,
         metadata: Metadata | None = None,
-        send_flush: bool = True,
         transition: TransitionType = TransitionType.NONE,
         transition_duration: int = 0,
+        enqueue: bool = False,
         autostart: bool = True,
+        send_flush: bool = True,
     ) -> None:
-        """Request player to start playing a single url."""
+        """
+        Request player to start playing a single url.
+
+        Parameters:
+        - url: the (http) URL to the media that needs to be played.
+        - mime_type: optionally provide the mimetype, will be derived from url if omitted.
+        - metadata: optionally provide metadata of the url that is going to be played.
+        - transition: optionally specify a transition, such as fade-in.
+        - transition_duration: optionally specify a transition duration.
+        - enqueue: enqueue this url to play after the current URL finished.
+        - autostart: advanced option to not auto start playback but wait for the buffer to be full.
+        - send_flush: advanced option to flush the buffer before playback.
+        """
         self.logger.debug("play url: %s", url)
         if not url.startswith("http"):
             raise UnsupportedContentType(f"Invalid URL: {url}")
 
         if send_flush:
-            # flush buffers before playback
+            # flush buffers before playback of a new track
             await self.send_strm(b"f", autostart=b"0")
         self._next_url = url
         self._next_metadata = metadata
+        if enqueue:
+            self._next_transition = transition
+            self._next_transition_duration = transition_duration
+            self._next_mime_type = mime_type
+            return
         # power on if we're not already powered
         if not self._powered:
             await self.power(True)
@@ -762,11 +783,12 @@ class SlimClient:
 
     def _process_stat_aude(self, data: bytes) -> None:
         """Process incoming stat AUDe message (power level and mute)."""
+        self.logger.debug("AUDe received - %s", data)
         # ignore this event (and use optimistic state instead), is is flaky across players
 
     def _process_stat_audg(self, data: bytes) -> None:
         """Process incoming stat AUDg message."""
-        # srtm-s command received.
+        self.logger.debug("AUDg received - %s", data)
         # Some players may send this as acknowledge of volume change (audg command).
 
     def _process_stat_stmc(self, data: bytes) -> None:
@@ -778,6 +800,21 @@ class SlimClient:
     def _process_stat_stmd(self, data: bytes) -> None:
         """Process incoming stat STMd message (decoder ready)."""
         self.logger.debug("STMd received - decoder ready.")
+        if self._next_url:
+            # a next url has been enqueued
+            asyncio.create_task(
+                self.play_url(
+                    url=self._next_url,
+                    mime_type=self._next_mime_type,
+                    metadata=self._next_metadata,
+                    transition=self._next_transition,
+                    transition_duration=self._next_transition_duration,
+                    enqueue=False,
+                    autostart=True,
+                    send_flush=False,
+                )
+            )
+            return
         self.callback(EventType.PLAYER_DECODER_READY, self)
 
     def _process_stat_stmf(self, data: bytes) -> None:
@@ -853,6 +890,8 @@ class SlimClient:
         self.current_url = None
         self._next_metadata = None
         self._next_url = None
+        self._next_transition = TransitionType.NONE
+        self._next_transition_duration = 0
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stml(self, data: bytes) -> None:
