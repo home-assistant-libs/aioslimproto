@@ -15,6 +15,7 @@ import struct
 import time
 from asyncio import StreamReader, StreamWriter, create_task
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum, IntEnum
 from typing import TypedDict
 from urllib.parse import parse_qsl, urlparse
@@ -206,6 +207,17 @@ class Metadata(TypedDict):
     image_url: str  # optional
 
 
+@dataclass
+class UrlDetails:
+    """Details of an (media) URL that can be played by a slimproto player."""
+
+    url: str
+    mime_type: str | None = None
+    metadata: Metadata | None = None
+    transition: TransitionType = TransitionType.NONE
+    transition_duration: int = 0
+
+
 class SlimClient:
     """SLIMProto socket client."""
 
@@ -218,8 +230,6 @@ class SlimClient:
         """Initialize the socket client."""
         self.callback = callback
         self.logger = logging.getLogger(__name__)
-        self.current_url: str | None = None
-        self.current_metadata: Metadata | None = None
         self._reader = reader
         self._writer = writer
         self._player_id: str = ""
@@ -234,11 +244,9 @@ class SlimClient:
         self._jiffies: int = 0
         self._last_timestamp: float = 0
         self._elapsed_milliseconds: float = 0
-        self._next_url: str | None = None
-        self._next_metadata: Metadata | None = None
-        self._next_transition: TransitionType = (TransitionType.NONE,)
-        self._next_transition_duration: int = (0,)
-        self._next_mime_type: str | None = None
+        self._prev_url: UrlDetails | None = None
+        self._current_url: UrlDetails | None = None
+        self._next_url: UrlDetails | None = None
         self._connected: bool = False
         self._last_heartbeat = 0
         self._auto_play: bool = False
@@ -345,6 +353,21 @@ class SlimClient:
         """Return (realtime) epoch timestamp from player."""
         return self._jiffies + int((time.time() - self._last_timestamp) * 1000)
 
+    @property
+    def current_url(self) -> UrlDetails | None:
+        """Return the currently playing url(details)."""
+        return self._current_url
+
+    @property
+    def previous_url(self) -> UrlDetails | None:
+        """Return the previously played url(details), if any."""
+        return self._prev_url
+
+    @property
+    def next_url(self) -> UrlDetails | None:
+        """Return the next/enqueued url(details), if any."""
+        return self._next_url
+
     async def stop(self) -> None:
         """Send stop command to player."""
         await self.send_strm(b"q", flags=0)
@@ -430,6 +453,32 @@ class SlimClient:
         self._muted = muted
         self.callback(EventType.PLAYER_UPDATED, self)
 
+    async def next(self) -> None:
+        """Play next URL on the player (if a next url is enqueued)."""
+        if not self._next_url:
+            return
+        self.play_url(
+            url=self._next_url.url,
+            mime_type=self._next_url.mime_type,
+            metadata=self._next_url.metadata,
+            enqueue=False,
+            autostart=True,
+            send_flush=True,
+        )
+
+    async def previous(self) -> None:
+        """Play the previous URL on the player (if possible)."""
+        if not self._prev_url:
+            return
+        self.play_url(
+            url=self._prev_url.url,
+            mime_type=self._prev_url.mime_type,
+            metadata=self._prev_url.metadata,
+            enqueue=False,
+            autostart=True,
+            send_flush=True,
+        )
+
     async def play_url(
         self,
         url: str,
@@ -461,12 +510,11 @@ class SlimClient:
         if send_flush:
             # flush buffers before playback of a new track
             await self.send_strm(b"f", autostart=b"0")
-        self._next_url = url
-        self._next_metadata = metadata
+
+        self._next_url = UrlDetails(
+            url=url, mime_type=mime_type, metadata=metadata, transition=transition
+        )
         if enqueue:
-            self._next_transition = transition
-            self._next_transition_duration = transition_duration
-            self._next_mime_type = mime_type
             return
         # power on if we're not already powered
         if not self._powered:
@@ -496,7 +544,7 @@ class SlimClient:
                 "HTTPS stream requested but player does not support HTTPS, "
                 "trying HTTP instead but playback may fail."
             )
-            self.current_url = url.replace("https", "http")
+            self._next_url.url = url.replace("https", "http")
             scheme = "http"
             port = 80
 
@@ -804,11 +852,11 @@ class SlimClient:
             # a next url has been enqueued
             asyncio.create_task(
                 self.play_url(
-                    url=self._next_url,
-                    mime_type=self._next_mime_type,
-                    metadata=self._next_metadata,
-                    transition=self._next_transition,
-                    transition_duration=self._next_transition_duration,
+                    url=self._next_url.url,
+                    mime_type=self._next_url.mime_type,
+                    metadata=self._next_url.metadata,
+                    transition=self._next_url.transition,
+                    transition_duration=self._next_url.transition_duration,
                     enqueue=False,
                     autostart=True,
                     send_flush=False,
@@ -849,9 +897,8 @@ class SlimClient:
         """Process incoming stat STMs message: Playback of new track has started."""
         self.logger.debug("STMs received - playback of new track has started")
         self._state = PlayerState.PLAYING
-        self.current_metadata = self._next_metadata
-        self.current_url = self._next_url
-        self._next_metadata = None
+        self._prev_url = self._current_url
+        self._current_url = self._next_url
         self._next_url = None
         self.callback(EventType.PLAYER_UPDATED, self)
 
@@ -886,12 +933,9 @@ class SlimClient:
         self.logger.debug("STMu received - end of playback.")
         self._state = PlayerState.STOPPED
         # invalidate url/metadata
-        self.current_metadata = None
-        self.current_url = None
-        self._next_metadata = None
+        self._current_url = None
+        self._prev_url = None
         self._next_url = None
-        self._next_transition = TransitionType.NONE
-        self._next_transition_duration = 0
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stml(self, data: bytes) -> None:

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from uuid import uuid1
 
 from aioslimproto.client import PlayerState
+from aioslimproto.const import EventType
 from aioslimproto.errors import SlimProtoException
 from aioslimproto.util import select_free_port
 
@@ -225,6 +226,25 @@ class SlimProtoCLI:
             await player.volume_set(max(0, player.volume_level - 5))
         elif cmd == "power":
             await player.power(not player.powered)
+        elif cmd == "play":
+            await player.play()
+        elif cmd == "pause":
+            await player.pause()
+        elif cmd in ("fwd", "jump_fwd"):
+            await player.next()
+        elif cmd in ("rew", "jump_rew"):
+            await player.previous()
+        else:
+            # forward all other commands as event to be handled by a lib consumer
+            player.callback(
+                EventType.PLAYER_BTN_EVENT,
+                player,
+                {
+                    "type": "butn",
+                    "timestamp": 0,
+                    "button": cmd,
+                },
+            )
 
     @staticmethod
     async def handle_play(player: SlimClient, args: list[str]) -> None:
