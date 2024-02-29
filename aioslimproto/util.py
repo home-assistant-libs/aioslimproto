@@ -95,3 +95,17 @@ def parse_headers(resp_data: bytes) -> dict[str, str]:
         value = subparts[1]
         result[key.lower()] = value
     return result
+
+
+def parse_status(resp_data: bytes) -> tuple[str, int, str]:
+    """Parse HTTP status from raw (HTTP) response message."""
+    http_version = "HTTP/1.0"
+    http_status_code = 200
+    http_status_str = ""
+    raw_status_line = resp_data.decode().split("\r\n")[0]
+    status_line_parts = raw_status_line.split(" ", 2)
+    http_version = status_line_parts[0]
+    http_status_code = int(status_line_parts[1])
+    if len(status_line_parts) > 2:
+        http_status_str = status_line_parts[2]
+    return (http_version, http_status_code, http_status_str)

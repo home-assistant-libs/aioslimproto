@@ -25,7 +25,7 @@ from async_timeout import timeout
 from .const import FALLBACK_CODECS, EventType
 from .display import SlimProtoDisplay
 from .errors import UnsupportedContentType
-from .util import parse_capabilities, parse_headers
+from .util import parse_capabilities, parse_headers, parse_status
 from .visualisation import SpectrumAnalyser, VisualisationType
 from .volume import SlimProtoVolume
 
@@ -208,7 +208,7 @@ class Metadata(TypedDict):
 
 
 @dataclass
-class UrlDetails:
+class MediaDetails:
     """Details of an (media) URL that can be played by a slimproto player."""
 
     url: str
@@ -244,9 +244,9 @@ class SlimClient:
         self._jiffies: int = 0
         self._last_timestamp: float = 0
         self._elapsed_milliseconds: float = 0
-        self._prev_url: UrlDetails | None = None
-        self._current_url: UrlDetails | None = None
-        self._next_url: UrlDetails | None = None
+        self._prev_media: MediaDetails | None = None
+        self._current_media: MediaDetails | None = None
+        self._next_media: MediaDetails | None = None
         self._connected: bool = False
         self._last_heartbeat = 0
         self._auto_play: bool = False
@@ -354,19 +354,27 @@ class SlimClient:
         return self._jiffies + int((time.time() - self._last_timestamp) * 1000)
 
     @property
-    def current_url(self) -> UrlDetails | None:
-        """Return the currently playing url(details)."""
-        return self._current_url
+    def current_url(self) -> str | None:
+        """Return currently playing url.
+
+        NOTE: Deprecated, use current_media instead.
+        """
+        return self.current_media.url if self.current_media else None
 
     @property
-    def previous_url(self) -> UrlDetails | None:
-        """Return the previously played url(details), if any."""
-        return self._prev_url
+    def current_media(self) -> MediaDetails | None:
+        """Return the currently playing media(details)."""
+        return self._current_media
 
     @property
-    def next_url(self) -> UrlDetails | None:
-        """Return the next/enqueued url(details), if any."""
-        return self._next_url
+    def previous_media(self) -> MediaDetails | None:
+        """Return the previously played media(details), if any."""
+        return self._prev_media
+
+    @property
+    def next_media(self) -> MediaDetails | None:
+        """Return the next/enqueued media(details), if any."""
+        return self._next_media
 
     async def stop(self) -> None:
         """Send stop command to player."""
@@ -455,12 +463,12 @@ class SlimClient:
 
     async def next(self) -> None:
         """Play next URL on the player (if a next url is enqueued)."""
-        if not self._next_url:
+        if not self._next_media:
             return
         self.play_url(
-            url=self._next_url.url,
-            mime_type=self._next_url.mime_type,
-            metadata=self._next_url.metadata,
+            url=self._next_media.url,
+            mime_type=self._next_media.mime_type,
+            metadata=self._next_media.metadata,
             enqueue=False,
             autostart=True,
             send_flush=True,
@@ -468,12 +476,12 @@ class SlimClient:
 
     async def previous(self) -> None:
         """Play the previous URL on the player (if possible)."""
-        if not self._prev_url:
+        if not self._prev_media:
             return
         self.play_url(
-            url=self._prev_url.url,
-            mime_type=self._prev_url.mime_type,
-            metadata=self._prev_url.metadata,
+            url=self._prev_media.url,
+            mime_type=self._prev_media.mime_type,
+            metadata=self._prev_media.metadata,
             enqueue=False,
             autostart=True,
             send_flush=True,
@@ -511,7 +519,7 @@ class SlimClient:
             # flush buffers before playback of a new track
             await self.send_strm(b"f", autostart=b"0")
 
-        self._next_url = UrlDetails(
+        self._next_media = MediaDetails(
             url=url, mime_type=mime_type, metadata=metadata, transition=transition
         )
         if enqueue:
@@ -544,7 +552,7 @@ class SlimClient:
                 "HTTPS stream requested but player does not support HTTPS, "
                 "trying HTTP instead but playback may fail."
             )
-            self._next_url.url = url.replace("https", "http")
+            self._next_media.url = url.replace("https", "http")
             scheme = "http"
             port = 80
 
@@ -576,7 +584,7 @@ class SlimClient:
             server_port=port,
             server_ip=int(ipaddress.ip_address(ipaddr)),
             threshold=200,
-            output_threshold=10,
+            output_threshold=20,
             trans_duration=transition_duration,
             trans_type=transition.value,
             flags=0x20 if scheme == "https" else 0x00,
@@ -848,15 +856,15 @@ class SlimClient:
     def _process_stat_stmd(self, data: bytes) -> None:
         """Process incoming stat STMd message (decoder ready)."""
         self.logger.debug("STMd received - decoder ready.")
-        if self._next_url:
+        if self._next_media:
             # a next url has been enqueued
             asyncio.create_task(
                 self.play_url(
-                    url=self._next_url.url,
-                    mime_type=self._next_url.mime_type,
-                    metadata=self._next_url.metadata,
-                    transition=self._next_url.transition,
-                    transition_duration=self._next_url.transition_duration,
+                    url=self._next_media.url,
+                    mime_type=self._next_media.mime_type,
+                    metadata=self._next_media.metadata,
+                    transition=self._next_media.transition,
+                    transition_duration=self._next_media.transition_duration,
                     enqueue=False,
                     autostart=True,
                     send_flush=False,
@@ -897,9 +905,9 @@ class SlimClient:
         """Process incoming stat STMs message: Playback of new track has started."""
         self.logger.debug("STMs received - playback of new track has started")
         self._state = PlayerState.PLAYING
-        self._prev_url = self._current_url
-        self._current_url = self._next_url
-        self._next_url = None
+        self._prev_media = self._current_media
+        self._current_media = self._next_media
+        self._next_media = None
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stmt(self, data: bytes) -> None:
@@ -933,9 +941,9 @@ class SlimClient:
         self.logger.debug("STMu received - end of playback.")
         self._state = PlayerState.STOPPED
         # invalidate url/metadata
-        self._current_url = None
-        self._prev_url = None
-        self._next_url = None
+        self._current_media = None
+        self._prev_media = None
+        self._next_media = None
         self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stml(self, data: bytes) -> None:
@@ -954,16 +962,18 @@ class SlimClient:
     async def _process_resp(self, data: bytes) -> None:
         """Process incoming RESP message: Response received at player."""
         self.logger.debug("RESP received - Response received at player.")
+        _, status_code, status = parse_status(data)
         headers = parse_headers(data)
 
         if "location" in headers:
             # handle redirect
             location = headers["location"]
             self.logger.debug("Received redirect to %s", location)
-            if location.startswith("https") and not self._capabilities.get("CanHTTPS"):
-                self.logger.error("Server requires HTTPS.")
-            else:
-                await self.play_url(location)
+            await self.play_url(location)
+            return
+
+        if status_code > 300:
+            self.logger.error("Server responds with status %s %s", status_code, status)
             return
 
         if "content-type" in headers:
@@ -973,6 +983,13 @@ class SlimClient:
             # send the codc message to the player to inform about the codec that needs to be used
             self.logger.debug("send CODC for contenttype %s: %s", content_type, codc_msg)
             await self._send_frame(b"codc", codc_msg)
+
+        # parse ICY metadata
+        if "icy-name" in headers:
+            if not self.next_media.metadata:
+                self.next_media.metadata = Metadata(title=headers["icy-name"])
+            elif not self.next_media.metadata.get("title"):
+                self.next_media.metadata["title"] = headers["icy-name"]
 
         # send continue (used when autoplay 1 or 3)
         if self._auto_play:
