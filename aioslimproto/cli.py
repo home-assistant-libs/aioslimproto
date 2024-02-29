@@ -589,7 +589,13 @@ class SlimProtoCLI:
     async def _handle_cli_message(self, msg: CLIMessage) -> Any:
         """Handle message from one of the CLi interfaces."""
         # NOTE: Player_id can be empty string for generic commands
-        player = self.server.get_player(msg.player_id)
+        if msg.player_id:
+            player = self.server.get_player(msg.player_id)
+            if player is None:
+                self.logger.warning(f"Unknown player: {msg.player_id}")
+                return {}
+        else:
+            player = None
 
         # find handler for request
         handler = getattr(self, f"handle_{msg.command}", None)
