@@ -366,6 +366,7 @@ class SlimProtoCLI:
             while True:
                 raw_request = await reader.readline()
                 raw_request = raw_request.strip().decode("iso-8859-1")
+                self.logger.debug("Client request on CLI: %s", raw_request)
                 cli_msg = CLIMessage.from_string(raw_request)
                 result = await self._handle_cli_message(cli_msg)
                 # echo back the command
