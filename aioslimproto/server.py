@@ -23,7 +23,7 @@ class SlimServer:
 
     def __init__(
         self,
-        cli_port: int | None = None,
+        cli_port: int | None = 0,
         cli_port_json: int | None = 0,
         ip_address: str | None = None,
         name: str | None = None,
