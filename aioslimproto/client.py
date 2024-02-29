@@ -792,7 +792,7 @@ class SlimClient:
         """
         self.logger.debug("STMo received - output underrun.")
         if self._auto_play:
-            asyncio.create_task(self.stop())
+            asyncio.create_task(self.play())
         else:
             self.callback(EventType.PLAYER_OUTPUT_UNDERRUN, self)
 
