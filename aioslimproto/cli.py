@@ -256,7 +256,7 @@ class SlimProtoCLI:
             response += f"{key}: {value}\r\n"
         response += "\r\n"
         response += body
-        writer.write(response.encode("utf-8"))
+        writer.write(response.encode("iso-8859-1"))
         await writer.drain()
 
     @staticmethod
@@ -288,7 +288,7 @@ class SlimProtoCLI:
         try:
             while True:
                 raw_request = await reader.readline()
-                raw_request = raw_request.strip().decode("utf-8")
+                raw_request = raw_request.strip().decode("iso-8859-1")
                 if not raw_request:
                     break
                 # request comes in as url encoded strings, separated by space
@@ -348,7 +348,7 @@ class SlimProtoCLI:
                         )
                 # echo back the request and the result (if any)
                 response += "\n"
-                writer.write(response.encode("utf-8"))
+                writer.write(response.encode("iso-8859-1"))
                 await writer.drain()
         except ConnectionResetError:
             pass
@@ -605,24 +605,24 @@ class SlimProtoCLI:
         }
         # regular command/handshake messages are just replied and connection closed
         if not streaming:
-            return await self.send_json_response(writer, response, headers=headers)
+            return await self.send_json_response(writer, data=response, headers=headers)
 
         # streaming mode: send messages from the queue to the client
         # the subscription connection is kept open and events are streamed to the client
-        headers.update(
-            {
-                "Content-Type": "application/json",
-            }
-        )
-        await self.send_json_response(writer, response, headers=headers)
+        headers.update({"Content-Type": "application/json", "Transfer-Encoding": "chunked"})
+        # send headers only
+        await self.send_status_response(writer, 200, headers=headers)
+        data = json.dumps(response)
+        writer.write(f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode())
+        await writer.drain()
 
         # keep delivering messages to the client until it disconnects
         # keep sending messages/events from the client's queue
         while not writer.is_closing():
             # make sure we always send an array of messages
-            msg = [await cometd_client.queue.get()]
-            chunk = json.dumps(msg).encode("utf8") + "\r\n"
-            writer.write(chunk)
+            response = [await cometd_client.queue.get()]
+            data = json.dumps(response)
+            writer.write(f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode())
             await writer.drain()
             cometd_client.last_seen = int(time.time())
 
