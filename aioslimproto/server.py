@@ -10,8 +10,9 @@ from typing import Any
 
 from .cli import SlimProtoCLI
 from .client import SlimClient
-from .const import SLIMPROTO_PORT, EventType, SlimEvent
+from .const import SLIMPROTO_PORT
 from .discovery import start_discovery
+from .models import EventType, SlimEvent
 from .util import get_hostname, get_ip
 
 EventCallBackType = Callable[[SlimEvent], None]
@@ -27,6 +28,7 @@ class SlimServer:
         cli_port_json: int | None = 0,
         ip_address: str | None = None,
         name: str | None = None,
+        control_port: int = SLIMPROTO_PORT,
     ) -> None:
         """
         Initialize SlimServer instance.
@@ -38,13 +40,17 @@ class SlimServer:
         - cli_port_json: Same as cli port but it's newer JSON RPC equivalent.
         - ip_address: IP to broadcast to clients to discover this server, None for autoselect.
         - name: Name to broadcast to clients to discover this server, None for autoselect.
+        - control_port: The port to start the slimproto server on, default is 3483.
+          Note that only software clients can actually handle a non default control port.
         """
         self.logger = logging.getLogger(__name__)
         self.ip_address = ip_address or get_ip()
         self.name = name or get_hostname()
+        self.control_port = control_port
         self.cli = SlimProtoCLI(self, cli_port, cli_port_json)
         self._subscribers: list[EventSubscriptionType] = []
-        self._socket_servers: list[asyncio.Server | asyncio.BaseTransport] = []
+        self._server: asyncio.Server | None = None
+        self._discovery: asyncio.BaseTransport | None = None
         self._players: dict[str, SlimClient] = {}
 
     @property
@@ -58,30 +64,30 @@ class SlimServer:
 
     async def start(self):
         """Start running the servers."""
-        # slimproto port (3483) can not be different than the default
-        self.logger.info("Starting SLIMProto server on port %s", SLIMPROTO_PORT)
-        self._socket_servers = [
-            # start slimproto server
-            await asyncio.start_server(self._create_client, "0.0.0.0", SLIMPROTO_PORT),
-            # setup cli
-            *await self.cli.start(),
-            # setup discovery
-            await start_discovery(
-                self.ip_address,
-                SLIMPROTO_PORT,
-                self.cli.cli_port,
-                self.cli.cli_port_json,
-                self.name,
-            ),
-        ]
+        self.logger.info("Starting SLIMProto server on port %s", self.control_port)
+        # start slimproto server
+        self._server = await asyncio.start_server(self._create_client, "0.0.0.0", self.control_port)
+        # start cli
+        await self.cli.start()
+        # start discovery
+        self._discovery = await start_discovery(
+            self.ip_address,
+            self.control_port,
+            self.cli.cli_port,
+            self.cli.cli_port_json,
+            self.name,
+        )
 
     async def stop(self):
         """Stop running the server."""
         for client in list(self._players.values()):
             client.disconnect()
         self._players = {}
-        for _server in self._socket_servers:
-            _server.close()
+        if self._server:
+            self._server.close()
+        if self._discovery:
+            self._discovery.close()
+        await self.cli.stop()
 
     def signal_event(self, event: SlimEvent) -> None:
         """

@@ -109,3 +109,13 @@ def parse_status(resp_data: bytes) -> tuple[str, int, str]:
     if len(status_line_parts) > 2:
         http_status_str = status_line_parts[2]
     return (http_version, http_status_code, http_status_str)
+
+
+def empty_queue(q: asyncio.Queue) -> None:
+    """Empty an asyncio Queue."""
+    for _ in range(q.qsize()):
+        try:
+            q.get_nowait()
+            q.task_done()
+        except (asyncio.QueueEmpty, ValueError):
+            pass

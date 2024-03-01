@@ -15,207 +15,40 @@ import struct
 import time
 from asyncio import StreamReader, StreamWriter, create_task
 from collections.abc import Callable
-from dataclasses import dataclass
-from enum import Enum, IntEnum
-from typing import TypedDict
+from typing import Any
 from urllib.parse import parse_qsl, urlparse
 
 from async_timeout import timeout
 
-from .const import FALLBACK_CODECS, EventType
+from .const import (
+    FALLBACK_CODECS,
+    FALLBACK_MODEL,
+    FALLBACK_SAMPLE_RATE,
+    FALLLBACK_FIRMWARE,
+    HEARTBEAT_INTERVAL,
+)
 from .display import SlimProtoDisplay
 from .errors import UnsupportedContentType
+from .models import (
+    CODEC_MAPPING,
+    DEVICE_TYPE,
+    FORMAT_BYTE,
+    PCM_SAMPLE_RATE,
+    PCM_SAMPLE_SIZE,
+    ButtonCode,
+    EventType,
+    MediaDetails,
+    Metadata,
+    PlayerState,
+    RemoteCode,
+    TransitionType,
+)
 from .util import parse_capabilities, parse_headers, parse_status
 from .visualisation import SpectrumAnalyser, VisualisationType
 from .volume import SlimProtoVolume
 
 # pylint: disable=unused-argument
 # ruff: noqa: ARG002
-
-# from http://wiki.slimdevices.com/index.php/SlimProtoTCPProtocol#HELO
-DEVICE_TYPE = {
-    2: "squeezebox",
-    3: "softsqueeze",
-    4: "squeezebox2",
-    5: "transporter",
-    6: "softsqueeze3",
-    7: "receiver",
-    8: "squeezeslave",
-    9: "controller",
-    10: "boom",
-    11: "softboom",
-    12: "squeezeplay",
-}
-
-
-class PlayerState(Enum):
-    """Enum with the possible player states."""
-
-    PLAYING = "playing"
-    STOPPED = "stopped"
-    PAUSED = "paused"
-    BUFFERING = "buffering"
-    BUFFER_READY = "buffer_ready"
-
-
-class TransitionType(Enum):
-    """Transition type enum."""
-
-    NONE = b"0"
-    CROSSFADE = b"1"
-    FADE_IN = b"2"
-    FADE_OUT = b"3"
-    FADE_IN_OUT = b"4"
-
-
-class RemoteCode(IntEnum):
-    """Enum with all (known) remote ir codes."""
-
-    SLEEP = 1988737095
-    POWER = 1988706495
-    REWIND = 1988739135
-    PAUSE = 1988698335
-    FORWARD = 1988730975
-    ADD = 1988714655
-    PLAY = 1988694255
-    UP = 1988747295
-    DOWN = 1988735055
-    LEFT = 1988726895
-    RIGHT = 1988743215
-    VOLUME_UP = 1988722815
-    VOLUME_DOWN = 1988690175
-    NUM_1 = 1988751375
-    NUM_2 = 1988692215
-    NUM_3 = 1988724855
-    NUM_4 = 1988708535
-    NUM_5 = 1988741175
-    NUM_6 = 1988700375
-    NUM_7 = 1988733015
-    NUM_8 = 1988716695
-    NUM_9 = 1988749335
-    NUM_0 = 1988728935
-    FAVORITES = 1988696295
-    SEARCH = 1988712615
-    BROWSE = 1988718735
-    SHUFFLE = 1988745255
-    REPEAT = 1988704455
-    NOW_PLAYING = 1988720775
-    SIZE = 1988753415
-    BRIGHTNESS = 1988691195
-
-
-class ButtonCode(IntEnum):
-    """Enum with all (known) button codes."""
-
-    POWER = 65546
-    PRESET_1 = 131104
-    PRESET_2 = 131105
-    PRESET_3 = 131106
-    PRESET_4 = 131107
-    PRESET_5 = 131108
-    PRESET_6 = 131109
-    BACK = 131085
-    PLAY = 131090
-    ADD = 131091
-    UP = 131083
-    OK = 131086
-    REWIND = 131088
-    PAUSE = 131095
-    FORWARD = 131101
-    VOLUME_DOWN = 131081
-    VOLUME_UP = 131082
-
-
-PCM_SAMPLE_SIZE = {
-    # Map with sample sizes used in slimproto."""
-    8: b"0",
-    16: b"1",
-    20: b"2",
-    32: b"3",
-    24: b"4",
-    0: b"?",
-}
-
-PCM_SAMPLE_RATE = {
-    # map with sample rates used in slimproto."""
-    # https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol.html#Command:_.22strm.22
-    # See %pcm_sample_rates in slimserver/Slim/Player/Squeezebox2.pm and
-    # slimserver/Slim/Player/SqueezePlay.pm for definition of sample rates
-    11000: b"0",
-    22000: b"1",
-    44100: b"3",
-    48000: b"4",
-    8000: b"5",
-    12000: b"6",
-    16000: b"7",
-    24000: b"8",
-    88200: b":",
-    96000: b"9",
-    176400: b";",
-    192000: b"<",
-    352800: b"=",
-    384000: b">",
-    0: b"?",
-}
-
-CODEC_MAPPING = {
-    # map with common audio mime types to type used in squeezebox players
-    "audio/mp3": "mp3",
-    "audio/mpeg": "mp3",
-    "audio/flac": "flc",
-    "audio/x-flac": "flc",
-    "audio/wma": "wma",
-    "audio/ogg": "ogg",
-    "audio/oga": "ogg",
-    "audio/aac": "aac",
-    "audio/aacp": "aac",
-    "audio/alac": "alc",
-    "audio/wav": "pcm",
-    "audio/x-wav": "pcm",
-    "audio/dsf": "dsf",
-    "audio/pcm,": "pcm",
-}
-
-FORMAT_BYTE = {
-    # map with audio formats used in slimproto to formatbyte
-    # https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol.html#Command:_.22strm.22
-    "pcm": b"p",
-    "mp3": b"m",
-    "flc": b"f",
-    "wma": b"w",
-    "ogg": b"o",
-    "aac": b"a",
-    "alc": b"l",
-    "dsf": b"p",
-    "dff": b"p",
-    "aif": b"p",
-}
-
-FALLBACK_MODEL = "Squeezebox"
-FALLLBACK_FIRMWARE = "Unknown"
-FALLBACK_SAMPLE_RATE = 96000
-HEARTBEAT_INTERVAL = 5
-
-
-class Metadata(TypedDict):
-    """Optional metadata for playback."""
-
-    item_id: str  # optional
-    artist: str  # optional
-    album: str  # optional
-    title: str  # optional
-    image_url: str  # optional
-
-
-@dataclass
-class MediaDetails:
-    """Details of an (media) URL that can be played by a slimproto player."""
-
-    url: str
-    mime_type: str | None = None
-    metadata: Metadata | None = None
-    transition: TransitionType = TransitionType.NONE
-    transition_duration: int = 0
 
 
 class SlimClient:
@@ -252,6 +85,7 @@ class SlimClient:
         self._auto_play: bool = False
         self._reader_task = create_task(self._socket_reader())
         self._heartbeat_task: asyncio.Task | None = None
+        self.extra_data: dict[str, Any] = {}  # used by the cli to store data
 
     def disconnect(self) -> None:
         """Disconnect and/or cleanup socket client."""
@@ -520,7 +354,11 @@ class SlimClient:
             await self.send_strm(b"f", autostart=b"0")
 
         self._next_media = MediaDetails(
-            url=url, mime_type=mime_type, metadata=metadata, transition=transition
+            url=url,
+            mime_type=mime_type,
+            metadata=metadata,
+            transition=transition,
+            transition_duration=transition_duration,
         )
         if enqueue:
             return

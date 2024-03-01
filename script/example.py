@@ -5,7 +5,7 @@ import contextlib
 import logging
 
 from aioslimproto import SlimServer
-from aioslimproto.const import EventType, SlimEvent
+from aioslimproto.models import EventType, SlimEvent
 
 logging.basicConfig(
     level=logging.DEBUG,
