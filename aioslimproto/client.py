@@ -878,7 +878,7 @@ class SlimClient:
             codec = CODEC_MAPPING[content_type]
             if codec not in self.supported_codecs:
                 self.logger.warning(
-                    "Player did report support for content_type %s, playback might fail",
+                    "Player did not report support for content_type %s, playback might fail",
                     content_type,
                 )
             if content_type in ("audio/aac", "audio/aacp"):

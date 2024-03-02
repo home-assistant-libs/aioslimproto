@@ -187,6 +187,9 @@ class SlimProtoCLI:
             method, path, _ = headers[0].split(" ")
             self.logger.debug("Client request on JSON RPC: %s %s -- %s", method, path, body)
 
+            if method not in ("GET", "POST"):
+                await self.send_status_response(writer, 405, "Method not allowed")
+
             # regular json rpc request
             if path == "/jsonrpc.js":
                 command_msg: CommandMessage = json.loads(body)
@@ -223,9 +226,6 @@ class SlimProtoCLI:
             self.logger.exception(exc)
             await self.send_status_response(writer, 501, str(exc))
         finally:
-            if writer.can_write_eof():
-                writer.write_eof()
-                await writer.drain()
             if not writer.is_closing():
                 writer.close()
 
@@ -336,7 +336,7 @@ class SlimProtoCLI:
                 except (AttributeError, NotImplementedError):
                     # no handler found, forward as event
                     if player := self.server.get_player(player_id):
-                        args_str = " ".join([command] + args)
+                        args_str = " ".join([command] + [str(x) for x in args])
                         player.callback(EventType.PLAYER_CLI_EVENT, player, args_str)
                     else:
                         self.logger.warning(
@@ -622,8 +622,11 @@ class SlimProtoCLI:
             # make sure we always send an array of messages
             response = [await cometd_client.queue.get()]
             data = json.dumps(response)
-            writer.write(f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode())
-            await writer.drain()
+            try:
+                writer.write(f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode())
+                await writer.drain()
+            except ConnectionResetError:
+                break
             cometd_client.last_seen = int(time.time())
 
     async def _handle_command(self, params: tuple[str, list[str | int]]) -> Any:
@@ -637,7 +640,6 @@ class SlimProtoCLI:
         player_id = params[0]
         command = str(params[1][0])
         args, kwargs = parse_args(params[1][1:])
-        args_str = " ".join([command] + args)
         if player_id and "seq_no" in kwargs and (player := self.server.get_player(player_id)):
             player.extra_data["seq_no"] = int(kwargs["seq_no"])
         if handler := getattr(self, f"_handle_{command}", None):
@@ -654,6 +656,7 @@ class SlimProtoCLI:
                 return cmd_result
         # no handler found, forward as event
         if player := self.server.get_player(player_id):
+            args_str = " ".join([command] + [str(x) for x in args])
             player.callback(EventType.PLAYER_CLI_EVENT, player, args_str)
         else:
             self.logger.warning("No handler for %s", command)
@@ -953,22 +956,20 @@ class SlimProtoCLI:
         player_id: str,
         *args,
         **kwargs,
-    ) -> int | None:
+    ) -> None:
         """Handle player `play` command."""
         if player := self.server.get_player(player_id):
             await player.play()
-        return None
 
     async def _handle_stop(
         self,
         player_id: str,
         *args,
         **kwargs,
-    ) -> int | None:
+    ) -> None:
         """Handle player `stop` command."""
         if player := self.server.get_player(player_id):
             await player.stop()
-        return None
 
     async def _handle_pause(
         self,
@@ -976,14 +977,13 @@ class SlimProtoCLI:
         force: int = 0,
         *args,
         **kwargs,
-    ) -> int | None:
+    ) -> None:
         """Handle player `stop` command."""
         if player := self.server.get_player(player_id):
             if player.state == PlayerState.PLAYING:
                 await player.pause()
             else:
                 await player.play()
-        return None
 
     async def _handle_mode(
         self,
@@ -991,7 +991,7 @@ class SlimProtoCLI:
         subcommand: str,
         *args,
         **kwargs,
-    ) -> int | None:
+    ) -> None:
         """Handle player 'mode' command."""
         if subcommand == "play":
             return await self._handle_play(player_id, *args, **kwargs)
@@ -1008,7 +1008,7 @@ class SlimProtoCLI:
         subcommand: str,
         *args,
         **kwargs,
-    ) -> int | None:
+    ) -> None:
         """Handle player 'button' command."""
         player = self.server.get_player(player_id)
         if not player:
