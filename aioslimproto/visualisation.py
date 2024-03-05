@@ -9,76 +9,33 @@ from __future__ import annotations
 
 import struct
 
-# pylint: disable=missing-class-docstring,invalid-name
-
 
 class NoVisualisation:
-    """Representation of a NoVisualisation visualisation."""
+    """Representation of a disabled visualisation."""
 
-    which = 0
-
-    def pack(self):
-        """Pack data for sending."""
-        return struct.pack("!BB", 0, 0)
-
-
-class SpectrumChannel:
-    """Model for a SpectrumChannel."""
-
-    class Orientation:
-        """Model for SpectrumChannel Orientation."""
-
-        ltr = 0
-        rtl = 1
-
-    class Clipping:
-        """Model for SpectrumChannel Clipping."""
-
-        show_all = 0
-        clip_higher = 1
-
-    def __init__(
-        self,
-        position,
-        width,
-        orientation=Orientation.ltr,
-        bar_width=4,
-        bar_space=1,
-        bar_grey=1,
-        cap_grey=3,
-        clipping=Clipping.show_all,
-    ):
-        """Init."""
-        self.position = position
-        self.width = width
-        self.orientation = orientation
-        self.bar_width = bar_width
-        self.bar_space = bar_space
-        self.bar_grey = bar_grey
-        self.cap_grey = cap_grey
-        self.clipping = clipping
+    id = 0
 
     def pack(self):
         """Pack data for sending."""
-        return struct.pack(
-            "!8I",
-            self.position,
-            self.width,
-            self.orientation,
-            self.bar_width,
-            self.bar_space,
-            self.clipping,
-            self.bar_grey,
-            self.cap_grey,
-        )
+        return struct.pack("!BB", self.id, 0)
+
+
+class WaveForm:
+    """Representation of a WaveForm visualisation."""
+
+    id = 3
+
+    def pack(self):
+        """Pack data for sending."""
+        return struct.pack("!BB", self.id, 0)
 
 
 class SpectrumAnalyser:
     """Representation of a SpectrumAnalyser visualisation."""
 
-    which = 2
+    id = 2
 
-    class Channel:
+    class Channels:
         """Model for SpectrumAnalyser Channel."""
 
         stereo = 0
@@ -90,9 +47,59 @@ class SpectrumAnalyser:
         high = 0
         low = 1
 
+    class SpectrumChannel:
+        """Model for a SpectrumChannel."""
+
+        class Orientation:
+            """Model for SpectrumChannel Orientation."""
+
+            ltr = 0
+            rtl = 1
+
+        class Clipping:
+            """Model for SpectrumChannel Clipping."""
+
+            show_all = 0
+            clip_higher = 1
+
+        def __init__(
+            self,
+            position,
+            width,
+            orientation=Orientation.ltr,
+            bar_width=4,
+            bar_space=1,
+            bar_grey=1,
+            cap_grey=3,
+            clipping=Clipping.clip_higher,
+        ):
+            """Init."""
+            self.position = position
+            self.width = width
+            self.orientation = orientation
+            self.bar_width = bar_width
+            self.bar_space = bar_space
+            self.bar_grey = bar_grey
+            self.cap_grey = cap_grey
+            self.clipping = clipping
+
+        def pack(self):
+            """Pack data for sending."""
+            return struct.pack(
+                "!8I",
+                self.position,
+                self.width,
+                self.orientation,
+                self.bar_width,
+                self.bar_space,
+                self.clipping,
+                self.bar_grey,
+                self.cap_grey,
+            )
+
     def __init__(
         self,
-        channels=Channel.stereo,
+        channels=Channels.stereo,
         bandwidth=Bandwidth.high,
         preemphasis=0x10000,
         left=SpectrumChannel(position=0, width=160),
@@ -107,27 +114,100 @@ class SpectrumAnalyser:
 
     def pack(self):
         """Pack data for sending."""
-        count = 3 + 8 + 8 if self.channels == self.Channel.stereo else 3
-        header = struct.pack("!BB", self.which, count)
+        # Parameters for the spectrum analyzer:
+        #   0 - Channels: stereo == 0, mono == 1
+        #   1 - Bandwidth: 0..22050Hz == 0, 0..11025Hz == 1
+        #   2 - Preemphasis in dB per KHz
+        # Left channel parameters:
+        #   3 - Position in pixels
+        #   4 - Width in pixels
+        #   5 - orientation: left to right == 0, right to left == 1
+        #   6 - Bar width in pixels
+        #   7 - Bar spacing in pixels
+        #   8 - Clipping: show all subbands == 0, clip higher subbands == 1
+        #   9 - Bar intensity (greyscale): 1-3
+        #   10 - Bar cap intensity (greyscale): 1-3
+        # Right channel parameters (not required for mono):
+        #   11-18 - same as left channel parameters
+        count = 3 + 8 + 8 if self.channels == self.Channels.stereo else 3
+        header = struct.pack("!BB", self.id, count)
         basic = struct.pack("!III", self.channels, self.bandwidth, self.preemphasis)
         left = self.left.pack()
-        right = self.right.pack() if self.channels == self.Channel.stereo else ""
+        right = self.right.pack() if self.channels == self.Channels.stereo else ""
         return header + basic + left + right
-
-
-class VUMeterChannel:
-    """Model for a VUMeterChannel."""
-
-    def __init__(self, position, width):
-        """Init."""
-        self.position = position
-        self.width = width
 
 
 class VUMeter:
     """Representation of a VUMeter visualisation."""
 
-    which = 1
+    id = 1
+
+    class Style:
+        """VUMeter Style."""
+
+        digital = 0
+        analog = 1
+
+    class Channels:
+        """VUMeter Channels."""
+
+        stereo = 0
+        mono = 1
+
+    class VUMeterChannel:
+        """VUMeterChannel."""
+
+        def __init__(self, position, width):
+            """Init."""
+            self.position = position
+            self.width = width
+
+        def pack(self):
+            """Pack data for sending."""
+            return struct.pack(
+                "!2I",
+                self.position,
+                self.width,
+            )
+
+    def __init__(
+        self,
+        style=Style.analog,
+        channels=Channels.stereo,
+        left=VUMeterChannel(0, 160),
+        right=VUMeterChannel(160, 160),
+    ):
+        """Init."""
+        self.style = style
+        self.channels = channels
+        self.left = left
+        self.right = right
+
+    def pack(self):
+        """Pack data for sending."""
+        # Parameters for the vumeter:
+        #   0 - Channels: stereo == 0, mono == 1
+        #   1 - Style: digital == 0, analog == 1
+        # Left channel parameters:
+        #   2 - Position in pixels
+        #   3 - Width in pixels
+        # Right channel parameters (not required for mono):
+        #   4-5 - same as left channel parameters
+        header = struct.pack("!BBB", self.id, self.channels, self.style)
+
+        count = 3 + 8 + 8 if self.channels == self.Channels.stereo else 3
+        header = struct.pack("!BB", self.id, count)
+        basic = struct.pack("!II", self.channels, self.style)
+
+        left = self.left.pack()
+        right = self.right.pack() if self.channels == self.Channels.stereo else b""
+        return header + basic + left + right
+
+
+class VUMeterESP32:
+    """Representation of a VUMeterESP32 visualisation."""
+
+    id = 0x11
 
     class Style:
         """Model for a VUMeter Style."""
@@ -135,24 +215,29 @@ class VUMeter:
         digital = 0
         analog = 1
 
-    class Channel:
-        """Model for a VUMeter Channel."""
-
-        stereo = 0
-        mono = 1
-
     def __init__(
         self,
-        style=Style.digital,
-        channel=Channel.stereo,
-        left=VUMeterChannel(0, 160),
-        right=VUMeterChannel(160, 160),
+        style=Style.analog,
+        width=128,
     ):
         """Init."""
         self.style = style
-        self.channel = channel
-        self.left = left
-        self.right = right
+        self.width = width
+
+    def pack(self):
+        """Pack data for sending."""
+        return struct.pack("!BBII", self.id, 2, self.width, self.style)
 
 
-VisualisationType = NoVisualisation | SpectrumAnalyser | VUMeter
+class SpectrumAnalyserESP32:
+    """Representation of a SpectrumAnalyserESP32 visualisation."""
+
+    id = 0x12
+
+    def __init__(self, width=128):
+        """Init."""
+        self.width = width
+
+    def pack(self):
+        """Pack data for sending."""
+        return struct.pack("!BBIII", self.id, 3, self.width, 8, 25)

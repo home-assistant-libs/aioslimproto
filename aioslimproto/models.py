@@ -45,6 +45,7 @@ DEVICE_TYPE = {
     10: "boom",
     11: "softboom",
     12: "squeezeplay",
+    100: "squeezeesp32",
 }
 
 
@@ -66,6 +67,16 @@ class TransitionType(Enum):
     FADE_IN = b"2"
     FADE_OUT = b"3"
     FADE_IN_OUT = b"4"
+
+
+class VisualisationType(Enum):
+    """Visualisation Type enum."""
+
+    NONE = "none"
+    SPECTRUM_ANALYZER = "spectrum_analyzer"
+    VU_METER_ANALOG = "vu_meter_analog"
+    VU_METER_DIGITAL = "vu_meter_digital"
+    WAVEFORM = "waveform"
 
 
 class RemoteCode(IntEnum):
@@ -123,7 +134,7 @@ class ButtonCode(IntEnum):
     PAUSE = 131095
     FORWARD = 131101
     VOLUME_DOWN = 131081
-    VOLUME_UP = 131082
+    POWER_RELEASE = 131082
 
 
 PCM_SAMPLE_SIZE = {
@@ -201,7 +212,7 @@ PLAYMODE_MAP = {
 }
 
 
-class Metadata(TypedDict):
+class MediaMetadata(TypedDict):
     """Optional metadata for playback."""
 
     item_id: str  # optional
@@ -209,6 +220,7 @@ class Metadata(TypedDict):
     album: str  # optional
     title: str  # optional
     image_url: str  # optional
+    duration: int  # optional
 
 
 @dataclass
@@ -217,9 +229,18 @@ class MediaDetails:
 
     url: str
     mime_type: str | None = None
-    metadata: Metadata = field(default_factory=dict)
+    metadata: MediaMetadata = field(default_factory=dict)
     transition: TransitionType = TransitionType.NONE
     transition_duration: int = 0
+
+
+@dataclass
+class Preset:
+    """Details of a (media) preset for a (supported) slimproto player."""
+
+    uri: str  # may be url or uri
+    text: str
+    icon: str
 
 
 class CommandMessage(TypedDict):
@@ -325,7 +346,7 @@ class MenuItemParams(TypedDict):  # noqa: D101
 
 
 class SlimMenuItem(TypedDict):
-    """Representation of MediaItem details."""
+    """Representation of a SlimMenuItem."""
 
     style: str
     track: str

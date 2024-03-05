@@ -23,11 +23,11 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from uuid import uuid1
 
-import shortuuid
+from aiohttp import web
 
 from aioslimproto.client import PlayerState
-from aioslimproto.errors import SlimProtoException
 from aioslimproto.util import empty_queue, select_free_port
 
 from .models import (
@@ -38,6 +38,7 @@ from .models import (
     CommandResultMessage,
     EventType,
     MediaDetails,
+    MediaMetadata,
     PlayerItem,
     PlayersResponse,
     PlayerStatusResponse,
@@ -52,9 +53,8 @@ if TYPE_CHECKING:
     from .client import SlimClient
     from .server import SlimServer
 
-# ruff: noqa: ARG004,ARG002
+# ruff: noqa: ARG004,ARG002,PLR0912
 
-CHUNK_SIZE = 50
 
 ArgsType = list[int | str]
 KwargsType = dict[str, Any]
@@ -110,7 +110,7 @@ class SlimProtoCLI:
 
     _unsub_callback: Callable | None = None
     _periodic_task: asyncio.Task | None = None
-    _servers: list[asyncio.Server] | None = None
+    _cli_server: asyncio.Server | None = None
 
     def __init__(
         self,
@@ -129,6 +129,9 @@ class SlimProtoCLI:
         self.logger = server.logger.getChild("cli")
         self._cometd_clients: dict[str, CometDClient] = {}
         self._player_map: dict[str, str] = {}
+        self._apprunner: web.AppRunner | None = None
+        self._webapp: web.Application | None = None
+        self._tcp_site: web.TCPSite | None = None
 
     async def start(self) -> None:
         """Start running the server(s)."""
@@ -137,146 +140,56 @@ class SlimProtoCLI:
             self.cli_port = await select_free_port(9090, 9190)
         if self.cli_port_json == 0:
             self.cli_port_json = await select_free_port(9000, 9089)
-        servers: list[asyncio.Server] = []
         if self.cli_port is not None:
             self.logger.info("Starting (legacy/telnet) SLIMProto CLI on port %s", self.cli_port)
-            servers.append(
-                await asyncio.start_server(self._handle_cli_client, "0.0.0.0", self.cli_port)
+            self._cli_server = await asyncio.start_server(
+                self._handle_cli_client, "0.0.0.0", self.cli_port
             )
         if self.cli_port_json is not None:
             self.logger.info("Starting SLIMProto JSON RPC CLI on port %s", self.cli_port_json)
-            servers.append(
-                await asyncio.start_server(self._handle_json_request, "0.0.0.0", self.cli_port_json)
+            self._webapp = web.Application(
+                logger=self.logger,
             )
-            self._unsub_callback = self.server.subscribe(
-                self._on_player_event,
-                (EventType.PLAYER_UPDATED, EventType.PLAYER_CONNECTED),
+            self._apprunner = web.AppRunner(self._webapp, access_log=None)
+            self._webapp.router.add_route("*", "/jsonrpc.js", self._handle_jsonrpc_client)
+            self._webapp.router.add_route("*", "/cometd", self._handle_cometd_client)
+            await self._apprunner.setup()
+            # set host to None to bind to all addresses on both IPv4 and IPv6
+            self._tcp_site = web.TCPSite(
+                self._apprunner, host=None, port=self.cli_port_json, shutdown_timeout=10
             )
-            self._periodic_task = asyncio.create_task(self._do_periodic())
-        self._servers = servers
+            await self._tcp_site.start()
+        # setup subscriptions
+        self._unsub_callback = self.server.subscribe(
+            self._on_player_event,
+            (EventType.PLAYER_UPDATED, EventType.PLAYER_CONNECTED),
+        )
+        self._periodic_task = asyncio.create_task(self._do_periodic())
 
     async def stop(self) -> None:
         """Stop running the server(s)."""
-        for server in self._servers or []:
-            server.close()
+        # stop/clean json-rpc webserver
+        if self._tcp_site:
+            await self._tcp_site.stop()
+            self._tcp_site = None
+        if self._apprunner:
+            await self._apprunner.cleanup()
+            self._apprunner = None
+        if self._webapp:
+            await self._webapp.shutdown()
+            await self._webapp.cleanup()
+            self._webapp = None
+        # stop cli server
+        if self._cli_server:
+            self._cli_server.close()
+            self._cli_server = None
+        # cleanup callbacks and tasks
         if self._unsub_callback:
             self._unsub_callback()
             self._unsub_callback = None
         if self._periodic_task:
             self._periodic_task.cancel()
             self._periodic_task = None
-
-    async def _handle_json_request(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
-        """Handle new connection on the socket."""
-        try:
-            raw_request = b""
-            while True:
-                chunk = await reader.read(CHUNK_SIZE)
-                raw_request += chunk
-                if len(chunk) < CHUNK_SIZE:
-                    break
-            request = raw_request.decode("UTF-8")
-            try:
-                head, body = request.split("\r\n\r\n", 1)
-            except ValueError:
-                head = request
-                body = ""
-            headers = head.split("\r\n")
-            method, path, _ = headers[0].split(" ")
-            self.logger.debug("Client request on JSON RPC: %s %s -- %s", method, path, body)
-
-            if method not in ("GET", "POST"):
-                await self.send_status_response(writer, 405, "Method not allowed")
-
-            # regular json rpc request
-            if path == "/jsonrpc.js":
-                command_msg: CommandMessage = json.loads(body)
-                self.logger.debug("Received request: %s", command_msg)
-                cmd_result = await self._handle_command(command_msg["params"])
-                if cmd_result is None:
-                    result: CommandErrorMessage = {
-                        **command_msg,
-                        "error": {"code": -1, "message": "Invalid command"},
-                    }
-                else:
-                    result: CommandResultMessage = {
-                        **command_msg,
-                        "result": cmd_result,
-                    }
-                # return the response to the client
-                await self.send_json_response(writer, data=result)
-                return
-
-            # cometd request (used by jive interface)
-            if path == "/cometd":
-                try:
-                    json_msg = json.loads(body)
-                except json.JSONDecodeError:
-                    return
-                # forward cometd to separate handler as it is slightly more involved
-                await self._handle_cometd_client(json_msg, writer)
-                return
-
-            # deny all other paths
-            await self.send_status_response(writer, 405, "Method or path not allowed")
-
-        except SlimProtoException as exc:
-            self.logger.exception(exc)
-            await self.send_status_response(writer, 501, str(exc))
-        finally:
-            if not writer.is_closing():
-                writer.close()
-
-    @staticmethod
-    async def send_json_response(
-        writer: asyncio.StreamWriter,
-        data: dict | list[dict] | None,
-        status: int = 200,
-        status_text: str = "OK",
-        headers: dict | None = None,
-    ) -> str:
-        """Build HTTP response from data."""
-        body = json.dumps(data)
-        response = ""
-        if not headers:
-            headers = {}
-        headers = {
-            "Server": "aioslimproto",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-            "Content-Type": "application/json",
-            "Expires": "-1",
-            "Connection": "keep-alive",
-            **headers,
-        }
-        response = f"HTTP/1.1 {status} {status_text}\r\n"
-        for key, value in headers.items():
-            response += f"{key}: {value}\r\n"
-        response += "\r\n"
-        response += body
-        writer.write(response.encode("iso-8859-1"))
-        await writer.drain()
-
-    @staticmethod
-    async def send_status_response(
-        writer: asyncio.StreamWriter,
-        status: int,
-        status_text: str = "OK",
-        headers: dict | None = None,
-    ) -> str:
-        """Build HTTP response from data."""
-        response = ""
-        if not headers:
-            headers = {}
-        headers = {"Server": "aioslimproto", **headers}
-        response = f"HTTP/1.1 {status} {status_text}\r\n"
-        for key, value in headers.items():
-            response += f"{key}: {value}\r\n"
-        response += "\r\n"
-        writer.write(response.encode())
-        await writer.drain()
 
     async def _handle_cli_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -357,11 +270,25 @@ class SlimProtoCLI:
         finally:
             self.logger.debug("Client disconnected from Telnet CLI")
 
-    async def _handle_cometd_client(  # noqa: PLR0912
-        self,
-        json_msg: list[dict[str, Any]],
-        writer: asyncio.StreamWriter,
-    ) -> None:
+    async def _handle_jsonrpc_client(self, request: web.Request) -> web.Response:
+        """Handle request on JSON-RPC endpoint."""
+        command_msg: CommandMessage = await request.json()
+        self.logger.debug("Received request: %s", command_msg)
+        cmd_result = await self._handle_command(command_msg["params"])
+        if cmd_result is None:
+            result: CommandErrorMessage = {
+                **command_msg,
+                "error": {"code": -1, "message": "Invalid command"},
+            }
+        else:
+            result: CommandResultMessage = {
+                **command_msg,
+                "result": cmd_result,
+            }
+        # return the response to the client
+        return web.json_response(result)
+
+    async def _handle_cometd_client(self, request: web.Request) -> web.Response:
         """
         Handle CometD request on the json CLI.
 
@@ -372,6 +299,7 @@ class SlimProtoCLI:
         clientid: str = ""
         response = []
         streaming = False
+        json_msg: list[dict[str, Any]] = await request.json()
         # cometd message is an array of commands/messages
         for cometd_msg in json_msg:
             channel = cometd_msg.get("channel")
@@ -380,7 +308,7 @@ class SlimProtoCLI:
                 clientid = cometd_msg.get("clientId")
             if not clientid and channel == "/meta/handshake":
                 # generate new clientid
-                clientid = shortuuid.uuid()
+                clientid = uuid1().hex
                 self._cometd_clients[clientid] = CometDClient(
                     client_id=clientid,
                 )
@@ -399,8 +327,7 @@ class SlimProtoCLI:
             if clientid not in self._cometd_clients:
                 # If a client sends any request and we do not have a valid clid record
                 # because the streaming connection has been lost for example, re-handshake them
-                return await self.send_json_response(
-                    writer,
+                return web.json_response(
                     [
                         {
                             "id": msgid,
@@ -414,7 +341,7 @@ class SlimProtoCLI:
                                 "interval": 0,
                             },
                         }
-                    ],
+                    ]
                 )
 
             # get the cometd_client object for the clientid
@@ -473,8 +400,7 @@ class SlimProtoCLI:
                 # disconnect message
                 logger.debug("CometD Client disconnected: %s", clientid)
                 self._cometd_clients.pop(clientid)
-                return await self.send_json_response(
-                    writer,
+                return web.json_response(
                     [
                         {
                             "id": msgid,
@@ -483,7 +409,7 @@ class SlimProtoCLI:
                             "successful": True,
                             "timestamp": time.strftime("%a, %d %b %Y %H:%M:%S %Z", time.gmtime()),
                         }
-                    ],
+                    ]
                 )
 
             elif channel == "/meta/subscribe":
@@ -532,7 +458,7 @@ class SlimProtoCLI:
                 )
                 cometd_client.slim_subscriptions[cometd_msg["data"]["response"]] = cometd_msg
                 # Return one-off result now, rest is handled by the subscription logic
-                self._handle_cometd_request(cometd_client, cometd_msg)
+                self._handle_cometd_client_request(cometd_client, cometd_msg)
 
             elif channel == "/slim/unsubscribe":
                 # A request to unsubscribe from a Logitech Media Server event, this is not the same as /meta/unsubscribe
@@ -576,7 +502,7 @@ class SlimProtoCLI:
                             "successful": True,
                         }
                     )
-                    self._handle_cometd_request(cometd_client, cometd_msg)
+                    self._handle_cometd_client_request(cometd_client, cometd_msg)
             else:
                 logger.warning("Unhandled channel %s", channel)
                 # always reply with the (default) response to every message
@@ -605,29 +531,55 @@ class SlimProtoCLI:
         }
         # regular command/handshake messages are just replied and connection closed
         if not streaming:
-            return await self.send_json_response(writer, data=response, headers=headers)
+            return web.json_response(response, headers=headers)
 
         # streaming mode: send messages from the queue to the client
         # the subscription connection is kept open and events are streamed to the client
-        headers.update({"Content-Type": "application/json", "Transfer-Encoding": "chunked"})
-        # send headers only
-        await self.send_status_response(writer, 200, headers=headers)
-        data = json.dumps(response)
-        writer.write(f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode())
-        await writer.drain()
+        headers.update({"Content-Type": "application/json"})
+        resp = web.StreamResponse(
+            status=200,
+            reason="OK",
+            headers=headers,
+        )
+        resp.enable_chunked_encoding()
+        await resp.prepare(request)
+        chunk = json.dumps(response).encode("utf8")
+        await resp.write(chunk)
 
         # keep delivering messages to the client until it disconnects
         # keep sending messages/events from the client's queue
-        while not writer.is_closing():
+        while True:
             # make sure we always send an array of messages
-            response = [await cometd_client.queue.get()]
-            data = json.dumps(response)
+            msg = [await cometd_client.queue.get()]
             try:
-                writer.write(f"{hex(len(data)).replace('0x', '')}\r\n{data}\r\n".encode())
-                await writer.drain()
+                chunk = json.dumps(msg).encode("utf8")
+                await resp.write(chunk)
+                cometd_client.last_seen = int(time.time())
             except ConnectionResetError:
                 break
-            cometd_client.last_seen = int(time.time())
+        return resp
+
+    def _handle_cometd_client_request(
+        self, client: CometDClient, cometd_request: dict[str, Any]
+    ) -> None:
+        """
+        Handle CometD request on the json CLI.
+
+        https://github.com/Logitech/slimserver/blob/public/8.4/Slim/Web/Cometd.pm
+        """
+
+        async def _handle() -> None:
+            result = await self._handle_command(cometd_request["data"]["request"])
+            await client.queue.put(
+                {
+                    "channel": cometd_request["data"]["response"],
+                    "id": cometd_request["id"],
+                    "data": result,
+                    "ext": {"priority": cometd_request["data"].get("priority")},
+                }
+            )
+
+        asyncio.create_task(_handle())
 
     async def _handle_command(self, params: tuple[str, list[str | int]]) -> Any:
         """Handle command for either JSON or CometD request."""
@@ -661,22 +613,6 @@ class SlimProtoCLI:
         else:
             self.logger.warning("No handler for %s", command)
         return None
-
-    def _handle_cometd_request(self, client: CometDClient, cometd_request: dict[str, Any]) -> None:
-        """Handle request for CometD client (and put result on client queue)."""
-
-        async def _handle() -> None:
-            result = await self._handle_command(cometd_request["data"]["request"])
-            await client.queue.put(
-                {
-                    "channel": cometd_request["data"]["response"],
-                    "id": cometd_request["id"],
-                    "data": result,
-                    "ext": {"priority": cometd_request["data"].get("priority")},
-                }
-            )
-
-        asyncio.create_task(_handle())
 
     def _handle_players(
         self,
@@ -712,8 +648,6 @@ class SlimProtoCLI:
         if player is None:
             return None
         playlist_items: list[MediaDetails] = []
-        if player.previous_media:
-            playlist_items.append(player.previous_media)
         if player.current_media:
             playlist_items.append(player.current_media)
         if player.next_media:
@@ -737,43 +671,44 @@ class SlimProtoCLI:
                 "current_title": self.server.name,
                 "time": int(player.elapsed_seconds),
                 "rate": 1,
-                "duration": 0,
+                "duration": 180,
                 "sleep": 0,
                 "will_sleep_in": 0,
                 "sync_master": "",
                 "sync_slaves": "",
                 "mixer volume": player.volume_level,
-                "playlist repeat": "none",
-                "playlist shuffle": 0,
-                "playlist_timestamp": 0,
-                "playlist_cur_index": 1,
-                "playlist_tracks": len(playlist_items),
-                "seq_no": player.extra_data.get("seq_no", 0),
-                "player_ip": player.device_address,
-                "digital_volume_control": 1,
-                "can_seek": 1,
+                "playlist repeat": player.extra_data.get("playlist_repeat", 0),
+                "playlist shuffle": player.extra_data.get("playlist_shuffle", 0),
+                "playlist_timestamp": player.extra_data.get("playlist_timestamp", int(time.time())),
                 "playlist mode": "off",
+                "seq_no": player.extra_data.get("seq_no", 0),
+                "digital_volume_control": 1,
+                "player_ip": player.device_address,
+                "playlist_cur_index": 0,
+                "playlist_tracks": len(playlist_items),
+                "can_seek": player.extra_data.get("can_seek", 0),
                 "playlist_loop": [
                     playlist_item_from_media_details(index, item)
                     for index, item in enumerate(playlist_items)
                 ],
             }
+
         # additional details if menu requested
         if menu == "menu":
             # in menu-mode the regular playlist_loop is replaced by item_loop
             result.pop("playlist_loop", None)
-            presets = await self._get_preset_items(player_id)
             preset_data: list[dict] = []
             preset_loop: list[int] = []
-            for _, media_item in presets:
+            for index, preset in enumerate(player.presets):
                 preset_data.append(
                     {
-                        "URL": media_item["params"]["uri"],
-                        "text": media_item["track"],
+                        "URL": str(index),
+                        "text": preset.text,
                         "type": "audio",
                     }
                 )
                 preset_loop.append(1)
+
             while len(preset_loop) < 10:
                 preset_data.append({})
                 preset_loop.append(0)
@@ -798,10 +733,10 @@ class SlimProtoCLI:
                 "preset_loop": preset_loop,
                 "preset_data": preset_data,
                 "item_loop": [
-                    menu_item_from_media_item(
+                    menu_item_from_media_details(
                         item,
                     )
-                    for item in (player.previous_media, player.current_media, player.next_media)
+                    for item in (player.current_media, player.next_media)
                     if item
                 ],
             }
@@ -811,7 +746,6 @@ class SlimProtoCLI:
                 **result,
                 # TODO ?!,
             }
-
         return result
 
     async def _handle_serverstatus(
@@ -888,12 +822,7 @@ class SlimProtoCLI:
             return
         # <playerid> mixer volume <0 .. 100|-100 .. +100|?>
         if subcommand == "volume" and isinstance(arg, int):
-            if "seq_no" in kwargs:
-                # handle a (jive based) squeezebox that already executed the command
-                # itself and just reports the new state
-                player.volume_level = arg
-            else:
-                await player.volume_set(arg)
+            await player.volume_set(arg)
             return None
         if subcommand == "volume" and arg == "?":
             return player.volume_level
@@ -943,11 +872,6 @@ class SlimProtoCLI:
             return None
         if value == "?":
             return int(player.powered)
-        if "seq_no" in kwargs:
-            # handle a (jive based) squeezebox that already executed the command
-            # itself and just reports the new state
-            player.powered = bool(value)
-            return None
         await player.power(bool(value))
         return None
 
@@ -1022,7 +946,41 @@ class SlimProtoCLI:
         if subcommand == "power":
             await player.power(not player.powered)
             return None
+        if subcommand == "jump_fwd" and player.next_media:
+            await player.next()
+            return None
+        if subcommand.startswith("preset_") and subcommand.endswith(".single"):
+            # only handle http-based presets, ignore/forward all other
+            preset_id = subcommand.split("preset_")[1].split(".")[0]
+            preset_index = int(preset_id) - 1
+            if len(player.presets) >= preset_index + 1:
+                preset = player.presets[preset_index]
+                if preset.uri.startswith("http"):
+                    await player.play_url(
+                        preset.uri,
+                        metadata=MediaMetadata(title=preset.text, image_url=preset.icon),
+                    )
+
         raise NotImplementedError(f"No handler for button/{subcommand}")
+
+    async def _handle_playlist(
+        self,
+        player_id: str,
+        subcommand: str,
+        *args,
+        **kwargs,
+    ) -> int | None:
+        """Handle player `playlist` command."""
+        # <playerid> playlist index <index|+index|-index|?> <fadeInSecs>
+        arg = args[0] if args else "?"
+        player = self.server.get_player(player_id)
+        if not player:
+            return None
+        # we only handle playlist index +1 - the rest is forwarded
+        if subcommand == "index" and arg in (1, "1", "+1") and player.next_media:
+            await player.next()
+            return None
+        raise NotImplementedError(f"No handler for playlist/{subcommand}")
 
     async def _handle_menu(
         self,
@@ -1032,10 +990,73 @@ class SlimProtoCLI:
         **kwargs,
     ) -> dict[str, Any]:
         """Handle menu request from CLI."""
+        menu_items = []
+        if player := self.server.get_player(player_id):
+            for index, preset in enumerate(player.presets):
+                preset_id = f"preset_{index+1}"
+                menu_items.append(
+                    {
+                        "id": preset_id,
+                        "icon": preset.icon,
+                        "text": preset.text,
+                        "homeMenuText": preset.text,
+                        "weight": 35,
+                        "node": "myMusic",
+                        "style": "itemplay",
+                        "nextWindow": "nowPlaying",
+                        "actions": {
+                            "go": {
+                                "cmd": ["button", f"{preset_id}.single"],
+                                "itemsParams": "commonParams",
+                                "params": {},
+                                "player": 0,
+                                "nextWindow": "nowPlaying",
+                            },
+                            "add": {
+                                "player": 0,
+                                "itemsParams": "commonParams",
+                                "params": {"uri": preset.uri, "cmd": "add"},
+                                "cmd": ["playlistcontrol"],
+                                "nextWindow": "refresh",
+                            },
+                            "more": {
+                                "player": 0,
+                                "itemsParams": "commonParams",
+                                "params": {"uri": preset.uri, "cmd": "add"},
+                                "cmd": ["playlistcontrol"],
+                                "nextWindow": "refresh",
+                            },
+                            "play": {
+                                "cmd": ["playlistcontrol"],
+                                "itemsParams": "commonParams",
+                                "params": {
+                                    "uri": preset.uri,
+                                    "cmd": "play",
+                                },
+                                "player": 0,
+                                "nextWindow": "nowPlaying",
+                            },
+                            "play-hold": {
+                                "cmd": ["playlistcontrol"],
+                                "itemsParams": "commonParams",
+                                "params": {"uri": preset.uri, "cmd": "load"},
+                                "player": 0,
+                                "nextWindow": "nowPlaying",
+                            },
+                            "add-hold": {
+                                "itemsParams": "commonParams",
+                                "params": {"uri": preset.uri, "cmd": "insert"},
+                                "player": 0,
+                                "cmd": ["playlistcontrol"],
+                                "nextWindow": "refresh",
+                            },
+                        },
+                    }
+                )
         return {
-            "item_loop": [],
+            "item_loop": menu_items[offset:limit],
             "offset": offset,
-            "count": 0,
+            "count": len(menu_items[offset:limit]),
         }
 
     def _handle_menustatus(
@@ -1073,7 +1094,9 @@ class SlimProtoCLI:
             if sub := client.slim_subscriptions.get(
                 f"/{client.client_id}/slim/playerstatus/{event.player_id}"
             ):
-                self._handle_cometd_request(client, sub)
+                self._handle_cometd_client_request(client, sub)
+            if sub := client.slim_subscriptions.get(f"/{client.client_id}/slim/serverstatus"):
+                self._handle_cometd_client_request(client, sub)
 
     async def _do_periodic(self) -> None:
         """Execute periodic sending of state and cleanup."""
@@ -1091,7 +1114,7 @@ class SlimProtoCLI:
             # handle client subscriptions
             for cometd_client in self._cometd_clients.values():
                 for sub in cometd_client.slim_subscriptions.values():
-                    self._handle_cometd_request(cometd_client, sub)
+                    self._handle_cometd_client_request(cometd_client, sub)
 
             await asyncio.sleep(60)
 
@@ -1116,7 +1139,7 @@ def dict_to_strings(source: dict) -> list[str]:
     return result
 
 
-def menu_item_from_media_item(
+def menu_item_from_media_details(
     media_item: MediaDetails, include_actions: bool = False
 ) -> PlaylistItem:
     """Parse (menu) MediaItem from MA MediaItem."""
@@ -1194,13 +1217,14 @@ def playlist_item_from_media_details(index: int, media: MediaDetails) -> Playlis
     return {
         "playlist index": index,
         "id": "-187651250107376",
+        "url": media.url,
         "title": media.metadata.get("title", media.url),
         "artist": media.metadata.get("artist", ""),
         "album": media.metadata.get("album", ""),
         "remote": 1,
         "artwork_url": media.metadata.get("image_url", ""),
         "coverid": "-187651250107376",
-        "duration": 0,
+        "duration": media.metadata.get("duration", ""),
         "bitrate": "",
         "samplerate": "",
         "samplesize": "",

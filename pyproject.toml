@@ -12,9 +12,9 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
 ]
 dependencies = [
+  "aiohttp>=3.9.2",
   "async-timeout",
   "pillow",
-  "shortuuid",
 ]
 description = "Python module to talk to Logitech Squeezebox players directly (without Logitech server)."
 license = {text = "Apache-2.0"}

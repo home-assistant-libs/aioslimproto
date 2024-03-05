@@ -25,19 +25,17 @@ async def main():
         if evt.type == EventType.PLAYER_HEARTBEAT:
             return  # too spammy
         LOGGER.debug(f"Received event {evt.type.value} from player {evt.player_id}: {evt.data}")
+        if evt.type == EventType.PLAYER_CONNECTED:
+            player = server.get_player(evt.player_id)
+            # play some radio url after a while
+            await asyncio.sleep(5)
+            await player.power(True)
+            await player.volume_set(50)
+            # await player.play_url("http://icecast.omroep.nl/radio2-sb-mp3", "audio/mp3")
 
     server.subscribe(on_event)
 
     # wait a bit for some players to discover the server and connect
-    await asyncio.sleep(10)
-    # send play request to a test player
-    for player in server.players:
-        if player.player_id != "94:b5:55:38:2a:a0":
-            continue
-        await player.power(True)
-        await player.volume_set(10)
-        await player.play_url("http://icecast.omroep.nl/radio2-sb-mp3", "audio/mp3")
-
     await asyncio.sleep(3600)
 
 
