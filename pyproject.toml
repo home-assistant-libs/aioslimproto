@@ -1,16 +1,10 @@
 [build-system]
-requires = ["setuptools>=62.3"]
 build-backend = "setuptools.build_meta"
+requires = ["setuptools>=62.3"]
 
 [project]
-name = "aioslimproto"
-version = "2.3.3"
-license     = {text = "Apache-2.0"}
-description = "Python module to talk to Logitech Squeezebox players directly (without Logitech server)."
-readme = "README.md"
-requires-python = ">=3.10"
-authors     = [
-    {name = "Marcel van der Veldt", email = "marcelveldt@users.noreply.github.com"}
+authors = [
+  {name = "Marcel van der Veldt", email = "marcelveldt@users.noreply.github.com"},
 ]
 classifiers = [
   "Environment :: Console",
@@ -18,9 +12,16 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
 ]
 dependencies = [
+  "aiohttp>=3.9.2",
   "async-timeout",
   "pillow",
 ]
+description = "Python module to talk to Logitech Squeezebox players directly (without Logitech server)."
+license = {text = "Apache-2.0"}
+name = "aioslimproto"
+readme = "README.md"
+requires-python = ">=3.10"
+version = "2.3.3"
 
 [project.optional-dependencies]
 test = [
@@ -37,15 +38,15 @@ test = [
 ]
 
 [tool.black]
-target-version = ['py310']
 line-length = 100
+target-version = ['py310']
 
 [tool.codespell]
 ignore-words-list = "provid,hass,followings"
 
 [tool.mypy]
-python_version = "3.11"
 check_untyped_defs = true
+python_version = "3.11"
 #disallow_any_generics = true
 disallow_incomplete_defs = true
 disallow_untyped_calls = false
@@ -70,14 +71,14 @@ module = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = [
-  "."
+  ".",
 ]
 
 [tool.setuptools]
-platforms = ["any"]
-zip-safe  = false
-packages = ["aioslimproto"]
 include-package-data = true
+packages = ["aioslimproto"]
+platforms = ["any"]
+zip-safe = false
 
 [tool.setuptools.package-data]
 aioslimproto = ["py.typed"]
@@ -87,12 +88,12 @@ fix = true
 show-fixes = true
 
 # enable later: "C90", "PTH", "TCH", "RET", "ANN"
-select = ["E", "F", "W", "I", "N", "D", "UP", "PL", "Q", "SIM", "TID", "ARG"]
-ignore = ["PLR2004", "N818"]
 extend-exclude = ["app_vars.py"]
-unfixable = ["F841"]
+ignore = ["PLR2004", "N818"]
 line-length = 100
+select = ["E", "F", "W", "I", "N", "D", "UP", "PL", "Q", "SIM", "TID", "ARG"]
 target-version = "py310"
+unfixable = ["F841"]
 
 [tool.ruff.flake8-annotations]
 allow-star-arg-any = true
@@ -107,7 +108,7 @@ convention = "pep257"
 
 [tool.ruff.pylint]
 
-max-branches=25
-max-returns=15
-max-args=10
-max-statements=50
+max-args = 10
+max-branches = 25
+max-returns = 15
+max-statements = 50

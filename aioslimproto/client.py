@@ -15,195 +15,42 @@ import struct
 import time
 from asyncio import StreamReader, StreamWriter, create_task
 from collections.abc import Callable
-from enum import Enum, IntEnum
-from typing import TypedDict
+from datetime import datetime
+from typing import Any
 from urllib.parse import parse_qsl, urlparse
 
 from async_timeout import timeout
 
-from .const import FALLBACK_CODECS, EventType
+from .const import (
+    FALLBACK_CODECS,
+    FALLBACK_MODEL,
+    FALLBACK_SAMPLE_RATE,
+    FALLLBACK_FIRMWARE,
+    HEARTBEAT_INTERVAL,
+)
 from .display import SlimProtoDisplay
 from .errors import UnsupportedContentType
-from .util import parse_capabilities, parse_headers
-from .visualisation import SpectrumAnalyser, VisualisationType
+from .models import (
+    CODEC_MAPPING,
+    DEVICE_TYPE,
+    FORMAT_BYTE,
+    PCM_SAMPLE_RATE,
+    PCM_SAMPLE_SIZE,
+    ButtonCode,
+    EventType,
+    MediaDetails,
+    MediaMetadata,
+    PlayerState,
+    Preset,
+    RemoteCode,
+    TransitionType,
+    VisualisationType,
+)
+from .util import parse_capabilities, parse_headers, parse_status
 from .volume import SlimProtoVolume
 
 # pylint: disable=unused-argument
 # ruff: noqa: ARG002
-
-# from http://wiki.slimdevices.com/index.php/SlimProtoTCPProtocol#HELO
-DEVICE_TYPE = {
-    2: "squeezebox",
-    3: "softsqueeze",
-    4: "squeezebox2",
-    5: "transporter",
-    6: "softsqueeze3",
-    7: "receiver",
-    8: "squeezeslave",
-    9: "controller",
-    10: "boom",
-    11: "softboom",
-    12: "squeezeplay",
-}
-
-
-class PlayerState(Enum):
-    """Enum with the possible player states."""
-
-    PLAYING = "playing"
-    STOPPED = "stopped"
-    PAUSED = "paused"
-    BUFFERING = "buffering"
-    BUFFER_READY = "buffer_ready"
-
-
-class TransitionType(Enum):
-    """Transition type enum."""
-
-    NONE = b"0"
-    CROSSFADE = b"1"
-    FADE_IN = b"2"
-    FADE_OUT = b"3"
-    FADE_IN_OUT = b"4"
-
-
-class RemoteCode(IntEnum):
-    """Enum with all (known) remote ir codes."""
-
-    SLEEP = 1988737095
-    POWER = 1988706495
-    REWIND = 1988739135
-    PAUSE = 1988698335
-    FORWARD = 1988730975
-    ADD = 1988714655
-    PLAY = 1988694255
-    UP = 1988747295
-    DOWN = 1988735055
-    LEFT = 1988726895
-    RIGHT = 1988743215
-    VOLUME_UP = 1988722815
-    VOLUME_DOWN = 1988690175
-    NUM_1 = 1988751375
-    NUM_2 = 1988692215
-    NUM_3 = 1988724855
-    NUM_4 = 1988708535
-    NUM_5 = 1988741175
-    NUM_6 = 1988700375
-    NUM_7 = 1988733015
-    NUM_8 = 1988716695
-    NUM_9 = 1988749335
-    NUM_0 = 1988728935
-    FAVORITES = 1988696295
-    SEARCH = 1988712615
-    BROWSE = 1988718735
-    SHUFFLE = 1988745255
-    REPEAT = 1988704455
-    NOW_PLAYING = 1988720775
-    SIZE = 1988753415
-    BRIGHTNESS = 1988691195
-
-
-class ButtonCode(IntEnum):
-    """Enum with all (known) button codes."""
-
-    POWER = 65546
-    PRESET_1 = 131104
-    PRESET_2 = 131105
-    PRESET_3 = 131106
-    PRESET_4 = 131107
-    PRESET_5 = 131108
-    PRESET_6 = 131109
-    BACK = 131085
-    PLAY = 131090
-    ADD = 131091
-    UP = 131083
-    OK = 131086
-    REWIND = 131088
-    PAUSE = 131095
-    FORWARD = 131101
-    VOLUME_DOWN = 131081
-    VOLUME_UP = 131082
-
-
-PCM_SAMPLE_SIZE = {
-    # Map with sample sizes used in slimproto."""
-    8: b"0",
-    16: b"1",
-    20: b"2",
-    32: b"3",
-    24: b"4",
-    0: b"?",
-}
-
-PCM_SAMPLE_RATE = {
-    # map with sample rates used in slimproto."""
-    # https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol.html#Command:_.22strm.22
-    # See %pcm_sample_rates in slimserver/Slim/Player/Squeezebox2.pm and
-    # slimserver/Slim/Player/SqueezePlay.pm for definition of sample rates
-    11000: b"0",
-    22000: b"1",
-    44100: b"3",
-    48000: b"4",
-    8000: b"5",
-    12000: b"6",
-    16000: b"7",
-    24000: b"8",
-    88200: b":",
-    96000: b"9",
-    176400: b";",
-    192000: b"<",
-    352800: b"=",
-    384000: b">",
-    0: b"?",
-}
-
-CODEC_MAPPING = {
-    # map with common audio mime types to type used in squeezebox players
-    "audio/mp3": "mp3",
-    "audio/mpeg": "mp3",
-    "audio/flac": "flc",
-    "audio/x-flac": "flc",
-    "audio/wma": "wma",
-    "audio/ogg": "ogg",
-    "audio/oga": "ogg",
-    "audio/aac": "aac",
-    "audio/aacp": "aac",
-    "audio/alac": "alc",
-    "audio/wav": "pcm",
-    "audio/x-wav": "pcm",
-    "audio/dsf": "dsf",
-    "audio/pcm,": "pcm",
-}
-
-FORMAT_BYTE = {
-    # map with audio formats used in slimproto to formatbyte
-    # https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol.html#Command:_.22strm.22
-    "pcm": b"p",
-    "mp3": b"m",
-    "flc": b"f",
-    "wma": b"w",
-    "ogg": b"o",
-    "aac": b"a",
-    "alc": b"l",
-    "dsf": b"p",
-    "dff": b"p",
-    "aif": b"p",
-}
-
-FALLBACK_MODEL = "Squeezebox"
-FALLLBACK_FIRMWARE = "Unknown"
-FALLBACK_SAMPLE_RATE = 96000
-HEARTBEAT_INTERVAL = 5
-
-
-class Metadata(TypedDict):
-    """Optional metadata for playback."""
-
-    item_id: str  # optional
-    artist: str  # optional
-    album: str  # optional
-    title: str  # optional
-    image_url: str  # optional
 
 
 class SlimClient:
@@ -218,29 +65,30 @@ class SlimClient:
         """Initialize the socket client."""
         self.callback = callback
         self.logger = logging.getLogger(__name__)
-        self.current_url: str | None = None
-        self.current_metadata: Metadata | None = None
+        self.volume_control = SlimProtoVolume()
+        self.display_control = SlimProtoDisplay(self)
         self._reader = reader
         self._writer = writer
         self._player_id: str = ""
         self._device_type: str = ""
         self._capabilities: dict[str, str] = {}
         self._device_name: str = ""
-        self._volume_control = SlimProtoVolume()
-        self._display_control = SlimProtoDisplay()
         self._powered: bool = False
         self._muted: bool = False
         self._state = PlayerState.STOPPED
         self._jiffies: int = 0
         self._last_timestamp: float = 0
         self._elapsed_milliseconds: float = 0
-        self._next_url: str | None = None
-        self._next_metadata: Metadata | None = None
+        self._current_media: MediaDetails | None = None
+        self._next_media: MediaDetails | None = None
         self._connected: bool = False
         self._last_heartbeat = 0
         self._auto_play: bool = False
         self._reader_task = create_task(self._socket_reader())
         self._heartbeat_task: asyncio.Task | None = None
+        # used by the cli to exchange data
+        self.extra_data: dict[str, Any] = {"playlist_timestamp": time.time()}
+        self.presets: list[Preset] = []
 
     def disconnect(self) -> None:
         """Disconnect and/or cleanup socket client."""
@@ -254,6 +102,21 @@ class SlimClient:
             if self._writer.can_write_eof():
                 self._writer.write_eof()
             self._writer.close()
+
+    async def configure_display(
+        self,
+        width: int | None = None,
+        visualisation: VisualisationType | None = None,
+        disabled: bool | None = None,
+    ) -> None:
+        """Configure display settings for this client (optional feature)."""
+        if width is not None:
+            self.display_control.width = width
+        if visualisation is not None:
+            self.display_control.visualisation_type = visualisation
+        if disabled is not None:
+            self.display_control.disabled = disabled
+        await self._render_display()
 
     @property
     def connected(self) -> bool:
@@ -306,7 +169,7 @@ class SlimClient:
     @property
     def volume_level(self) -> int:
         """Return current volume level of player."""
-        return self._volume_control.volume
+        return self.volume_control.volume
 
     @property
     def powered(self) -> bool:
@@ -342,6 +205,24 @@ class SlimClient:
         """Return (realtime) epoch timestamp from player."""
         return self._jiffies + int((time.time() - self._last_timestamp) * 1000)
 
+    @property
+    def current_url(self) -> str | None:
+        """Return currently playing url.
+
+        NOTE: Deprecated, use current_media instead.
+        """
+        return self.current_media.url if self.current_media else None
+
+    @property
+    def current_media(self) -> MediaDetails | None:
+        """Return the currently playing media(details)."""
+        return self._current_media
+
+    @property
+    def next_media(self) -> MediaDetails | None:
+        """Return the next/enqueued media(details), if any."""
+        return self._next_media
+
     async def stop(self) -> None:
         """Send stop command to player."""
         await self.send_strm(b"q", flags=0)
@@ -349,6 +230,7 @@ class SlimClient:
         if self._state != PlayerState.STOPPED:
             self._state = PlayerState.STOPPED
             self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display("playback_stop")
 
     async def play(self) -> None:
         """Send play/unpause command to player."""
@@ -375,13 +257,15 @@ class SlimClient:
 
     async def power(self, powered: bool = True) -> None:
         """Send power command to player."""
-        # mute is the same as power
+        if self.powered == powered:
+            return
         if not powered:
             await self.stop()
         power_int = 1 if powered else 0
-        await self._send_frame(b"aude", struct.pack("2B", power_int, 1))
+        await self.send_frame(b"aude", struct.pack("2B", power_int, 1))
         self._powered = powered
         self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display()
 
     async def toggle_power(self) -> None:
         """Toggle power command."""
@@ -389,64 +273,106 @@ class SlimClient:
 
     async def volume_set(self, volume_level: int) -> None:
         """Send new volume level command to player."""
-        self._volume_control.volume = volume_level
-        old_gain = self._volume_control.old_gain()
-        new_gain = self._volume_control.new_gain()
-        await self._send_frame(
+        if volume_level == self.volume_control.volume:
+            return
+        self.volume_control.volume = volume_level
+        old_gain = self.volume_control.old_gain()
+        new_gain = self.volume_control.new_gain()
+        await self.send_frame(
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
         self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display("show_volume")
 
     async def volume_up(self) -> None:
         """Send volume up command to player."""
-        self._volume_control.increment()
-        old_gain = self._volume_control.old_gain()
-        new_gain = self._volume_control.new_gain()
-        await self._send_frame(
+        self.volume_control.increment()
+        old_gain = self.volume_control.old_gain()
+        new_gain = self.volume_control.new_gain()
+        await self.send_frame(
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
         self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display("show_volume")
 
     async def volume_down(self) -> None:
         """Send volume down command to player."""
-        self._volume_control.decrement()
-        old_gain = self._volume_control.old_gain()
-        new_gain = self._volume_control.new_gain()
-        await self._send_frame(
+        self.volume_control.decrement()
+        old_gain = self.volume_control.old_gain()
+        new_gain = self.volume_control.new_gain()
+        await self.send_frame(
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
         self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display("show_volume")
 
     async def mute(self, muted: bool = False) -> None:
         """Send mute command to player."""
         muted_int = 0 if muted else 1
-        await self._send_frame(b"aude", struct.pack("2B", muted_int, 0))
+        await self.send_frame(b"aude", struct.pack("2B", muted_int, 0))
         self._muted = muted
         self.callback(EventType.PLAYER_UPDATED, self)
+
+    async def next(self) -> None:
+        """Play next URL on the player (if a next url is enqueued)."""
+        if not self._next_media:
+            return
+        await self.play_url(
+            url=self._next_media.url,
+            mime_type=self._next_media.mime_type,
+            metadata=self._next_media.metadata,
+            enqueue=False,
+            autostart=True,
+            send_flush=True,
+        )
 
     async def play_url(
         self,
         url: str,
         mime_type: str | None = None,
-        metadata: Metadata | None = None,
-        send_flush: bool = True,
+        metadata: MediaMetadata | None = None,
         transition: TransitionType = TransitionType.NONE,
         transition_duration: int = 0,
+        enqueue: bool = False,
         autostart: bool = True,
+        send_flush: bool = True,
     ) -> None:
-        """Request player to start playing a single url."""
+        """
+        Request player to start playing a single url.
+
+        Parameters:
+        - url: the (http) URL to the media that needs to be played.
+        - mime_type: optionally provide the mimetype, will be derived from url if omitted.
+        - metadata: optionally provide metadata of the url that is going to be played.
+        - transition: optionally specify a transition, such as fade-in.
+        - transition_duration: optionally specify a transition duration.
+        - enqueue: enqueue this url to play after the current URL finished.
+        - autostart: advanced option to not auto start playback but wait for the buffer to be full.
+        - send_flush: advanced option to flush the buffer before playback.
+        """
         self.logger.debug("play url: %s", url)
         if not url.startswith("http"):
             raise UnsupportedContentType(f"Invalid URL: {url}")
 
         if send_flush:
-            # flush buffers before playback
+            # flush buffers before playback of a new track
             await self.send_strm(b"f", autostart=b"0")
-        self._next_url = url
-        self._next_metadata = metadata
+            await self.send_strm(b"q", flags=0)
+
+        self._next_media = MediaDetails(
+            url=url,
+            mime_type=mime_type,
+            # metadata=metadata or {},
+            transition=transition,
+            transition_duration=transition_duration,
+        )
+        if metadata:
+            self._next_media.metadata = metadata
+        if enqueue:
+            return
         # power on if we're not already powered
         if not self._powered:
             await self.power(True)
@@ -475,15 +401,17 @@ class SlimClient:
                 "HTTPS stream requested but player does not support HTTPS, "
                 "trying HTTP instead but playback may fail."
             )
-            self.current_url = url.replace("https", "http")
+            self._next_media.url = url.replace("https", "http")
             scheme = "http"
             port = 80
 
         if mime_type is None:
             # try to get the audio format from file extension
-            ext = f'audio/{url.split(".")[-1]}'
-            if ext in CODEC_MAPPING:
-                mime_type = ext
+            for ext in (url[-3:], url.split(".")[-1]):
+                mime = f"audio/{ext}"
+                if mime in CODEC_MAPPING:
+                    mime_type = mime
+                    break
 
         codec_details = self._parse_codc(mime_type) if mime_type else b"?????"
 
@@ -507,61 +435,61 @@ class SlimClient:
             server_port=port,
             server_ip=int(ipaddress.ip_address(ipaddr)),
             threshold=200,
-            output_threshold=10,
+            output_threshold=20,
             trans_duration=transition_duration,
             trans_type=transition.value,
             flags=0x20 if scheme == "https" else 0x00,
             httpreq=httpreq,
         )
 
-    async def set_brightness(self, level=4):
-        """Set brightness command on (supported) display."""
-        assert 0 <= level <= 4
-        await self._send_frame(b"grfb", struct.pack("!H", level))
+    async def _render_display(self, action: str | None = None) -> None:
+        """Set display based on the current state."""
+        if self.display_control.disabled:
+            return
+        # set display brightness based on power state
+        await self.display_control.set_brightness(4 if self.powered else 1)
 
-    async def set_visualisation(self, visualisation: VisualisationType | None = None) -> None:
-        """Set Visualisation engine on player."""
-        if visualisation is None:
-            visualisation = SpectrumAnalyser()
+        # set the visualization on playback start/stop
+        if action == "playback_start":
+            await self.display_control.set_visualization(True)
+        elif action == "playback_stop":
+            # clear screen entirely on playback stop
+            await self.display_control.clear()
+            await self.display_control.set_visualization(False)
 
-        def _handle():
-            return visualisation.pack()
-
-        data = await asyncio.get_running_loop().run_in_executor(None, _handle)
-        await self._send_frame(b"visu", data)
-
-    async def render_display_text(
-        self,
-        text: str,
-        size: int = 16,
-        position: tuple[int, int] = (0, 0),
-        font: str = "DejaVu-Sans",
-    ) -> None:
-        """Render given text on display of (supported) slimproto client."""
-
-        def _render():
-            self._display_control.clear()
-            self._display_control.renderText(text, font, size, position)
-            return self._display_control.frame()
-
-        bitmap = await asyncio.get_running_loop().run_in_executor(None, _render)
-        await self.update_display(bitmap)
-
-    async def update_display(
-        self, bitmap: bytes, transition: str = "c", offset: int = 0, param: int = 0
-    ) -> None:
-        """Update display of (supported) slimproto client."""
-        frame = struct.pack("!Hcb", offset, transition.encode(), param) + bitmap
-        await self._send_frame(b"grfe", frame)
+        # temporary volume display
+        if action == "show_volume":
+            volume_str = f"VOLUME {self.volume_level}"
+            await self.display_control.set_lines(fullscreen=volume_str)
+        # temporary paused state display
+        elif self.state == PlayerState.PAUSED:
+            await self.display_control.set_lines(fullscreen="PAUSED")
+        # metadata while playing
+        elif self.powered and self.current_media:
+            first_line = self.state.value
+            second_line = self.current_media.url
+            if artist := self.current_media.metadata.get("artist"):
+                first_line = artist
+            if title := self.current_media.metadata.get("title"):
+                second_line = title
+            await self.display_control.set_lines(first_line, second_line)
+        # player off/idle: show clock
+        else:
+            time_str = datetime.now().strftime("%X")
+            # display clock in local time format without seconds
+            if len(time_str.split(":")) > 2:
+                time_str = time_str[:-3]
+            await self.display_control.set_lines(fullscreen=time_str)
 
     async def _send_heartbeat(self) -> None:
         """Send periodic heartbeat message to player."""
         while self.connected:
             self._last_heartbeat = heartbeat_id = self._last_heartbeat + 1
             await self.send_strm(b"t", autostart=b"0", flags=0, replay_gain=heartbeat_id)
+            await self._render_display()
             await asyncio.sleep(5)
 
-    async def _send_frame(self, command: bytes, data: bytes) -> None:
+    async def send_frame(self, command: bytes, data: bytes) -> None:
         """Send command to Squeeze player."""
         if self._reader.at_eof() or self._writer.is_closing():
             self.logger.debug("Socket is disconnected.")
@@ -639,7 +567,7 @@ class SlimClient:
             server_port,
             server_ip,
         )
-        await self._send_frame(b"strm", data + httpreq)
+        await self.send_frame(b"strm", data + httpreq)
 
     async def _process_helo(self, data: bytes) -> None:
         """Process incoming HELO event from player (player connected)."""
@@ -653,11 +581,10 @@ class SlimClient:
         self._capabilities = parse_capabilities(data)
         self.logger.debug("Player connected: %s", self.player_id)
         # Set some startup settings for the player
-        await self._send_frame(b"vers", b"7.999.999")
-        await self.stop()
-        await self._send_frame(b"setd", struct.pack("B", 0))
-        await self._send_frame(b"setd", struct.pack("B", 4))
-        await self.stop()
+        await self.send_frame(b"vers", b"7.9")
+        # request player to send the player name
+        await self.send_frame(b"setd", struct.pack("B", 0xFE))
+        await self.send_frame(b"setd", struct.pack("B", 0))
         # restore last power and volume levels
         # NOTE: this can be improved by storing the previous volume/power levels
         # so they can be restored when the player (re)connects.
@@ -670,6 +597,7 @@ class SlimClient:
     def _process_butn(self, data: bytes) -> None:
         """Handle 'butn' command from client."""
         timestamp, button = struct.unpack("!LL", data)
+        self.logger.debug("butn received - timestamp: %s - button: %s", timestamp, button)
         # handle common buttons
         if button == ButtonCode.POWER:
             asyncio.create_task(self.toggle_power())
@@ -682,9 +610,6 @@ class SlimClient:
             return
         if button == ButtonCode.VOLUME_DOWN:
             asyncio.create_task(self.volume_down())
-            return
-        if button == ButtonCode.VOLUME_UP:
-            asyncio.create_task(self.volume_up())
             return
         # forward all other
         self.callback(
@@ -700,6 +625,9 @@ class SlimClient:
     def _process_knob(self, data: bytes) -> None:
         """Handle 'knob' command from client."""
         timestamp, position, sync = struct.unpack("!LLB", data)
+        self.logger.debug(
+            "knob received - position: %s - button: %s - sync: %s", timestamp, position, sync
+        )
         self.callback(
             EventType.PLAYER_BTN_EVENT,
             self,
@@ -719,6 +647,7 @@ class SlimClient:
         # [1]	number of bits
         # [4]   the IR code, up to 32 bits
         timestamp, code = struct.unpack("!LxxL", data)
+        self.logger.debug("IR received - position: %s - code: %s", timestamp, code)
         # handle common buttons
         if code == RemoteCode.POWER:
             asyncio.create_task(self.toggle_power())
@@ -757,16 +686,20 @@ class SlimClient:
         event_handler = getattr(self, "_process_stat_%s" % event.lower(), None)
         if event_handler is None:
             self.logger.debug("Unhandled event: %s - event_data: %s", event, event_data)
+        elif asyncio.iscoroutinefunction(event_handler):
+            create_task(event_handler(data[4:]))
         else:
             asyncio.get_running_loop().call_soon(event_handler, data[4:])
 
-    def _process_stat_aude(self, data: bytes) -> None:
+    async def _process_stat_aude(self, data: bytes) -> None:
         """Process incoming stat AUDe message (power level and mute)."""
+        self.logger.debug("AUDe received - %s", data)
         # ignore this event (and use optimistic state instead), is is flaky across players
+        await self._render_display()
 
     def _process_stat_audg(self, data: bytes) -> None:
         """Process incoming stat AUDg message."""
-        # srtm-s command received.
+        self.logger.debug("AUDg received - %s", data)
         # Some players may send this as acknowledge of volume change (audg command).
 
     def _process_stat_stmc(self, data: bytes) -> None:
@@ -778,13 +711,26 @@ class SlimClient:
     def _process_stat_stmd(self, data: bytes) -> None:
         """Process incoming stat STMd message (decoder ready)."""
         self.logger.debug("STMd received - decoder ready.")
+        if self._next_media:
+            # a next url has been enqueued
+            asyncio.create_task(
+                self.play_url(
+                    url=self._next_media.url,
+                    mime_type=self._next_media.mime_type,
+                    metadata=self._next_media.metadata,
+                    transition=self._next_media.transition,
+                    transition_duration=self._next_media.transition_duration,
+                    enqueue=False,
+                    autostart=True,
+                    send_flush=False,
+                )
+            )
+            return
         self.callback(EventType.PLAYER_DECODER_READY, self)
 
     def _process_stat_stmf(self, data: bytes) -> None:
         """Process incoming stat STMf message (connection closed)."""
         self.logger.debug("STMf received - connection closed.")
-        self._state = PlayerState.STOPPED
-        self.callback(EventType.PLAYER_UPDATED, self)
 
     def _process_stat_stmo(self, data: bytes) -> None:
         """
@@ -793,32 +739,37 @@ class SlimClient:
         No more decoded (uncompressed) data to play; triggers rebuffering.
         """
         self.logger.debug("STMo received - output underrun.")
+        if self.state == PlayerState.BUFFERING:
+            return  # transitioning
+        self._state = PlayerState.BUFFERING
         if self._auto_play:
-            asyncio.create_task(self.stop())
+            asyncio.create_task(self.play())
         else:
             self.callback(EventType.PLAYER_OUTPUT_UNDERRUN, self)
 
-    def _process_stat_stmp(self, data: bytes) -> None:
+    async def _process_stat_stmp(self, data: bytes) -> None:
         """Process incoming stat STMp message: Pause confirmed."""
         self.logger.debug("STMp received - pause confirmed.")
         self._state = PlayerState.PAUSED
         self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display()
 
-    def _process_stat_stmr(self, data: bytes) -> None:
+    async def _process_stat_stmr(self, data: bytes) -> None:
         """Process incoming stat STMr message: Resume confirmed."""
         self.logger.debug("STMr received - resume confirmed.")
         self._state = PlayerState.PLAYING
         self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display()
 
-    def _process_stat_stms(self, data: bytes) -> None:
+    async def _process_stat_stms(self, data: bytes) -> None:
         """Process incoming stat STMs message: Playback of new track has started."""
         self.logger.debug("STMs received - playback of new track has started")
         self._state = PlayerState.PLAYING
-        self.current_metadata = self._next_metadata
-        self.current_url = self._next_url
-        self._next_metadata = None
-        self._next_url = None
+        self._current_media = self._next_media
+        self._next_media = None
+        self.extra_data["playlist_timestamp"] = int(time.time())
         self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display("playback_start")
 
     def _process_stat_stmt(self, data: bytes) -> None:
         """Process incoming stat STMt message: heartbeat from client."""
@@ -846,16 +797,16 @@ class SlimClient:
         self._last_timestamp = time.time()
         self.callback(EventType.PLAYER_HEARTBEAT, self)
 
-    def _process_stat_stmu(self, data: bytes) -> None:
+    async def _process_stat_stmu(self, data: bytes) -> None:
         """Process incoming stat STMu message: Buffer underrun: Normal end of playback."""
         self.logger.debug("STMu received - end of playback.")
         self._state = PlayerState.STOPPED
         # invalidate url/metadata
-        self.current_metadata = None
-        self.current_url = None
-        self._next_metadata = None
-        self._next_url = None
+        self._current_media = None
+        self._next_media = None
+        self.extra_data["playlist_timestamp"] = int(time.time())
         self.callback(EventType.PLAYER_UPDATED, self)
+        await self._render_display("playback_stop")
 
     def _process_stat_stml(self, data: bytes) -> None:
         """Process incoming stat STMl message: Buffer threshold reached."""
@@ -873,16 +824,24 @@ class SlimClient:
     async def _process_resp(self, data: bytes) -> None:
         """Process incoming RESP message: Response received at player."""
         self.logger.debug("RESP received - Response received at player.")
+        _, status_code, status = parse_status(data)
         headers = parse_headers(data)
 
         if "location" in headers:
             # handle redirect
             location = headers["location"]
             self.logger.debug("Received redirect to %s", location)
-            if location.startswith("https") and not self._capabilities.get("CanHTTPS"):
-                self.logger.error("Server requires HTTPS.")
-            else:
-                await self.play_url(location)
+            await self.play_url(
+                location,
+                self.next_media.mime_type,
+                self.next_media.metadata,
+                self.next_media.transition,
+                self.next_media.transition_duration,
+            )
+            return
+
+        if status_code > 300:
+            self.logger.error("Server responds with status %s %s", status_code, status)
             return
 
         if "content-type" in headers:
@@ -891,20 +850,38 @@ class SlimClient:
 
             # send the codc message to the player to inform about the codec that needs to be used
             self.logger.debug("send CODC for contenttype %s: %s", content_type, codc_msg)
-            await self._send_frame(b"codc", codc_msg)
+            await self.send_frame(b"codc", codc_msg)
+
+        # parse ICY metadata
+        if "icy-name" in headers and not self.next_media.metadata.get("title"):
+            self._next_media.metadata["title"] = headers["icy-name"]
 
         # send continue (used when autoplay 1 or 3)
         if self._auto_play:
-            await self._send_frame(b"cont", b"1")
+            await self.send_frame(b"cont", b"1")
 
     def _process_setd(self, data: bytes) -> None:
         """Process incoming SETD message: Get/set player firmware settings."""
+        self.logger.debug("SETD received - %s", data)
         data_id = data[0]
         if data_id == 0:
             # received player name
             self._device_name = data[1:-1].decode()
             self.callback(EventType.PLAYER_NAME_RECEIVED, self)
             self.logger = logging.getLogger(__name__).getChild(self._device_name)
+        if data_id == 0xFE:
+            # received display config (squeezebox2/squeezebox32)
+            display_height = 0
+            if len(data) == 7:
+                display_width, display_height, _led_config = struct.unpack("!HHH", data[1:])
+            elif len(data) == 5:
+                display_width, display_height = struct.unpack("!HH", data[1:])
+            else:
+                display_width = struct.unpack("!H", data[1:])
+            if display_width:
+                self.display_control.width = display_width
+            if display_height:
+                self.display_control.height = display_height
 
     def _parse_codc(self, content_type: str) -> bytes:
         """Parse CODEC details from mime/content type string."""
@@ -942,7 +919,7 @@ class SlimClient:
             codec = CODEC_MAPPING[content_type]
             if codec not in self.supported_codecs:
                 self.logger.warning(
-                    "Player did report support for content_type %s, playback might fail",
+                    "Player did not report support for content_type %s, playback might fail",
                     content_type,
                 )
             if content_type in ("audio/aac", "audio/aacp"):
