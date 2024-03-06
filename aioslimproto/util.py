@@ -32,25 +32,26 @@ def get_hostname():
     return socket.gethostname()
 
 
-def is_port_in_use(port: int) -> bool:
-    """Check if port is in use."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _sock:
-        try:
-            return _sock.connect_ex(("localhost", port)) == 0
-        except socket.gaierror:
-            return True
-
-
 async def select_free_port(range_start: int, range_end: int) -> int:
     """Automatically find available port within range."""
+
+    def is_port_in_use(port: int) -> bool:
+        """Check if port is in use."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _sock:
+            try:
+                _sock.bind(("0.0.0.0", port))
+            except OSError:
+                return True
+        return False
 
     def _select_free_port():
         for port in range(range_start, range_end):
             if not is_port_in_use(port):
                 return port
-        raise OSError("No free port available")
+        msg = "No free port available"
+        raise OSError(msg)
 
-    return await asyncio.get_running_loop().run_in_executor(None, _select_free_port)
+    return await asyncio.to_thread(_select_free_port)
 
 
 def parse_capabilities(helo_data: bytes) -> dict[str, Any]:
