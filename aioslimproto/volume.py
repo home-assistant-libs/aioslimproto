@@ -142,6 +142,8 @@ class SlimProtoVolume:
 
     def old_gain(self):
         """Return the "Old" gain value as required by the squeezebox."""
+        if self.volume <= 0:
+            return 0
         return self.old_map[self.volume]
 
     def decibels(self):
@@ -171,6 +173,8 @@ class SlimProtoVolume:
 
     def new_gain(self):
         """Return new gainvalue of the volume control."""
+        if self.volume <= 0:
+            return 0
         decibel = self.decibels()
         floatmult = 10 ** (decibel / 20.0)
         # avoid rounding errors somehow
