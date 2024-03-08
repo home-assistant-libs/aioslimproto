@@ -660,8 +660,9 @@ class SlimProtoCLI:
             "player_is_upgrading": False,
             "power": int(player.powered),
             "signalstrength": 0,
-            "waitingToPlay": 0,  # TODO?
+            "waitingToPlay": 0,
         }
+        cur_item = playlist_items[0] if playlist_items else None
         # additional details if player powered
         if player.powered:
             result = {
@@ -670,27 +671,18 @@ class SlimProtoCLI:
                 "remote": 1,
                 "current_title": self.server.name,
                 "time": int(player.elapsed_seconds),
-                "rate": 1,
-                "duration": 180,
-                "sleep": 0,
-                "will_sleep_in": 0,
+                "duration": cur_item.metadata.get("duration", 0) if cur_item else 0,
                 "sync_master": "",
                 "sync_slaves": "",
                 "mixer volume": player.volume_level,
-                "playlist repeat": player.extra_data.get("playlist_repeat", 0),
-                "playlist shuffle": player.extra_data.get("playlist_shuffle", 0),
-                "playlist_timestamp": player.extra_data.get("playlist_timestamp", int(time.time())),
-                "playlist mode": "off",
-                "seq_no": player.extra_data.get("seq_no", 0),
-                "digital_volume_control": 1,
                 "player_ip": player.device_address,
                 "playlist_cur_index": 0,
                 "playlist_tracks": len(playlist_items),
-                "can_seek": player.extra_data.get("can_seek", 0),
                 "playlist_loop": [
                     playlist_item_from_media_details(index, item)
                     for index, item in enumerate(playlist_items)
                 ],
+                **player.extra_data,
             }
 
         # additional details if menu requested
@@ -1246,7 +1238,7 @@ def create_player_item(playerindex: int, player: SlimClient) -> PlayerItem:
         "firmware": "unknown",
         "isplayer": 1,
         "displaytype": "none",
-        "uuid": player.extra_data.get("uuid"),
-        "seq_no": str(player.extra_data.get("seq_no", 0)),
+        "uuid": player.extra_data["uuid"],
+        "seq_no": str(player.extra_data["seq_no"]),
         "ip": player.device_address,
     }
