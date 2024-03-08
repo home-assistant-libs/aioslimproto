@@ -67,6 +67,21 @@ class SlimClient:
         self.logger = logging.getLogger(__name__)
         self.volume_control = SlimProtoVolume()
         self.display_control = SlimProtoDisplay(self)
+        # extra_data is used by the cli to exchange data
+        # it will be sent as-is in in the players data
+        self.extra_data: dict[str, Any] = {
+            "can_seek": 0,
+            "digital_volume_control": 1,
+            "playlist_timestamp": int(time.time()),
+            "playlist repeat": 0,
+            "playlist shuffle": 0,
+            "playlist mode": "off",
+            "rate": 1,
+            "seq_no": 0,
+            "sleep": 0,
+            "will_sleep_in": 0,
+            "uuid": None,
+        }
         self._reader = reader
         self._writer = writer
         self._player_id: str = ""
@@ -86,9 +101,7 @@ class SlimClient:
         self._auto_play: bool = False
         self._reader_task = create_task(self._socket_reader())
         self._heartbeat_task: asyncio.Task | None = None
-        # used by the cli to exchange data
-        self.extra_data: dict[str, Any] = {"playlist_timestamp": time.time()}
-        self.presets: list[Preset] = []
+        self._presets: list[Preset] = []
 
     def disconnect(self) -> None:
         """Disconnect and/or cleanup socket client."""
@@ -223,13 +236,24 @@ class SlimClient:
         """Return the next/enqueued media(details), if any."""
         return self._next_media
 
+    @property
+    def presets(self) -> list[Preset]:
+        """Get/set the player presets."""
+        return self._presets
+
+    @presets.setter
+    def presets(self, presets: list[Preset]) -> None:
+        """Get/set the player presets."""
+        self._presets = presets[:9]
+        self.callback(EventType.PLAYER_PRESETS_UPDATED, self)
+
     async def stop(self) -> None:
         """Send stop command to player."""
         await self.send_strm(b"q", flags=0)
         # some players do not update their state by event so we force it here
         if self._state != PlayerState.STOPPED:
             self._state = PlayerState.STOPPED
-            self.callback(EventType.PLAYER_UPDATED, self)
+            self.signal_update()
         await self._render_display("playback_stop")
 
     async def play(self) -> None:
@@ -238,7 +262,7 @@ class SlimClient:
         # some players do not update their state by event so we force it here
         if self._state == PlayerState.PAUSED:
             self._state = PlayerState.PLAYING
-            self.callback(EventType.PLAYER_UPDATED, self)
+            self.signal_update()
 
     async def pause(self) -> None:
         """Send pause command to player."""
@@ -246,7 +270,7 @@ class SlimClient:
         # some players do not update their state by event so we force it here
         if self._state == PlayerState.PLAYING:
             self._state = PlayerState.PAUSED
-            self.callback(EventType.PLAYER_UPDATED, self)
+            self.signal_update()
 
     async def toggle_pause(self) -> None:
         """Toggle play/pause command."""
@@ -264,7 +288,7 @@ class SlimClient:
         power_int = 1 if powered else 0
         await self.send_frame(b"aude", struct.pack("2B", power_int, 1))
         self._powered = powered
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
         await self._render_display()
 
     async def toggle_power(self) -> None:
@@ -282,7 +306,7 @@ class SlimClient:
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
         await self._render_display("show_volume")
 
     async def volume_up(self) -> None:
@@ -294,7 +318,7 @@ class SlimClient:
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
         await self._render_display("show_volume")
 
     async def volume_down(self) -> None:
@@ -306,7 +330,7 @@ class SlimClient:
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
         await self._render_display("show_volume")
 
     async def mute(self, muted: bool = False) -> None:
@@ -314,7 +338,7 @@ class SlimClient:
         muted_int = 0 if muted else 1
         await self.send_frame(b"aude", struct.pack("2B", muted_int, 0))
         self._muted = muted
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
 
     async def next(self) -> None:
         """Play next URL on the player (if a next url is enqueued)."""
@@ -365,12 +389,12 @@ class SlimClient:
         self._next_media = MediaDetails(
             url=url,
             mime_type=mime_type,
-            # metadata=metadata or {},
+            metadata=metadata or {},
             transition=transition,
             transition_duration=transition_duration,
         )
-        if metadata:
-            self._next_media.metadata = metadata
+        self.extra_data["playlist_timestamp"] = int(time.time())
+        self.signal_update()
         if enqueue:
             return
         # power on if we're not already powered
@@ -441,6 +465,10 @@ class SlimClient:
             flags=0x20 if scheme == "https" else 0x00,
             httpreq=httpreq,
         )
+
+    def signal_update(self) -> None:
+        """Signal a player updated event to listeners."""
+        self.callback(EventType.PLAYER_UPDATED, self)
 
     async def _render_display(self, action: str | None = None) -> None:
         """Set display based on the current state."""
@@ -751,14 +779,14 @@ class SlimClient:
         """Process incoming stat STMp message: Pause confirmed."""
         self.logger.debug("STMp received - pause confirmed.")
         self._state = PlayerState.PAUSED
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
         await self._render_display()
 
     async def _process_stat_stmr(self, data: bytes) -> None:
         """Process incoming stat STMr message: Resume confirmed."""
         self.logger.debug("STMr received - resume confirmed.")
         self._state = PlayerState.PLAYING
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
         await self._render_display()
 
     async def _process_stat_stms(self, data: bytes) -> None:
@@ -768,7 +796,7 @@ class SlimClient:
         self._current_media = self._next_media
         self._next_media = None
         self.extra_data["playlist_timestamp"] = int(time.time())
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
         await self._render_display("playback_start")
 
     def _process_stat_stmt(self, data: bytes) -> None:
@@ -805,7 +833,7 @@ class SlimClient:
         self._current_media = None
         self._next_media = None
         self.extra_data["playlist_timestamp"] = int(time.time())
-        self.callback(EventType.PLAYER_UPDATED, self)
+        self.signal_update()
         await self._render_display("playback_stop")
 
     def _process_stat_stml(self, data: bytes) -> None:

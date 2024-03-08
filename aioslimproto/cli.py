@@ -162,7 +162,11 @@ class SlimProtoCLI:
         # setup subscriptions
         self._unsub_callback = self.server.subscribe(
             self._on_player_event,
-            (EventType.PLAYER_UPDATED, EventType.PLAYER_CONNECTED),
+            (
+                EventType.PLAYER_UPDATED,
+                EventType.PLAYER_CONNECTED,
+                EventType.PLAYER_PRESETS_UPDATED,
+            ),
         )
         self._periodic_task = asyncio.create_task(self._do_periodic())
 
@@ -660,8 +664,9 @@ class SlimProtoCLI:
             "player_is_upgrading": False,
             "power": int(player.powered),
             "signalstrength": 0,
-            "waitingToPlay": 0,  # TODO?
+            "waitingToPlay": 0,
         }
+        cur_item = playlist_items[0] if playlist_items else None
         # additional details if player powered
         if player.powered:
             result = {
@@ -670,27 +675,18 @@ class SlimProtoCLI:
                 "remote": 1,
                 "current_title": self.server.name,
                 "time": int(player.elapsed_seconds),
-                "rate": 1,
-                "duration": 180,
-                "sleep": 0,
-                "will_sleep_in": 0,
+                "duration": cur_item.metadata.get("duration", 0) if cur_item else 0,
                 "sync_master": "",
                 "sync_slaves": "",
                 "mixer volume": player.volume_level,
-                "playlist repeat": player.extra_data.get("playlist_repeat", 0),
-                "playlist shuffle": player.extra_data.get("playlist_shuffle", 0),
-                "playlist_timestamp": player.extra_data.get("playlist_timestamp", int(time.time())),
-                "playlist mode": "off",
-                "seq_no": player.extra_data.get("seq_no", 0),
-                "digital_volume_control": 1,
                 "player_ip": player.device_address,
                 "playlist_cur_index": 0,
                 "playlist_tracks": len(playlist_items),
-                "can_seek": player.extra_data.get("can_seek", 0),
                 "playlist_loop": [
                     playlist_item_from_media_details(index, item)
                     for index, item in enumerate(playlist_items)
                 ],
+                **player.extra_data,
             }
 
         # additional details if menu requested
@@ -1090,13 +1086,38 @@ class SlimProtoCLI:
         """Forward player events."""
         if not event.player_id:
             return
-        for client in self._cometd_clients.values():
+        client = next(
+            (x for x in self._cometd_clients.values() if x.player_id == event.player_id), None
+        )
+        if not client:
+            return
+        # regular player updated (or connected) event, signal playerstatus
+        if event.type in (EventType.PLAYER_CONNECTED, EventType.PLAYER_UPDATED):
             if sub := client.slim_subscriptions.get(
                 f"/{client.client_id}/slim/playerstatus/{event.player_id}"
             ):
+                player = self.server.get_player(event.player_id)
+                if player.state == PlayerState.PLAYING:
+                    player.extra_data["playlist_timestamp"] = int(time.time())
                 self._handle_cometd_client_request(client, sub)
             if sub := client.slim_subscriptions.get(f"/{client.client_id}/slim/serverstatus"):
                 self._handle_cometd_client_request(client, sub)
+            return
+        # player presets updated, signal menustatus event
+        if event.type == EventType.PLAYER_PRESETS_UPDATED and (
+            sub := client.slim_subscriptions.get(
+                f"/{client.client_id}/slim/menustatus/{event.player_id}"
+            )
+        ):
+            menu = await self._handle_menu(event.player_id)
+            await client.queue.put(
+                {
+                    "channel": sub["data"]["response"],
+                    "id": sub["id"],
+                    "data": [event.player_id, menu["item_loop"], "replace", event.player_id],
+                    "ext": {"priority": sub["data"].get("priority")},
+                }
+            )
 
     async def _do_periodic(self) -> None:
         """Execute periodic sending of state and cleanup."""
@@ -1246,7 +1267,7 @@ def create_player_item(playerindex: int, player: SlimClient) -> PlayerItem:
         "firmware": "unknown",
         "isplayer": 1,
         "displaytype": "none",
-        "uuid": player.extra_data.get("uuid"),
-        "seq_no": str(player.extra_data.get("seq_no", 0)),
+        "uuid": player.extra_data["uuid"],
+        "seq_no": str(player.extra_data["seq_no"]),
         "ip": player.device_address,
     }

@@ -21,6 +21,7 @@ class EventType(Enum):
     PLAYER_BUFFER_READY = "player_buffer_ready"
     PLAYER_CLI_EVENT = "player_cli_event"
     PLAYER_BTN_EVENT = "player_btn_event"
+    PLAYER_PRESETS_UPDATED = "player_presets_updated"
 
 
 @dataclass
