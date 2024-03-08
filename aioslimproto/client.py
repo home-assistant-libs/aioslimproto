@@ -67,6 +67,21 @@ class SlimClient:
         self.logger = logging.getLogger(__name__)
         self.volume_control = SlimProtoVolume()
         self.display_control = SlimProtoDisplay(self)
+        # extra_data is used by the cli to exchange data
+        # it will be sent as-is in in the players data
+        self.extra_data: dict[str, Any] = {
+            "can_seek": 0,
+            "digital_volume_control": 1,
+            "playlist_timestamp": int(time.time()),
+            "playlist repeat": 0,
+            "playlist shuffle": 0,
+            "playlist mode": "off",
+            "rate": 1,
+            "seq_no": 0,
+            "sleep": 0,
+            "will_sleep_in": 0,
+            "uuid": None,
+        }
         self._reader = reader
         self._writer = writer
         self._player_id: str = ""
@@ -86,22 +101,7 @@ class SlimClient:
         self._auto_play: bool = False
         self._reader_task = create_task(self._socket_reader())
         self._heartbeat_task: asyncio.Task | None = None
-        # extra_data is used by the cli to exchange data
-        # it will be sent as-is in in the players data
-        self.extra_data: dict[str, Any] = {
-            "can_seek": 0,
-            "digital_volume_control": 1,
-            "playlist_timestamp": time.time(),
-            "playlist repeat": 0,
-            "playlist_shuffle": 0,
-            "playlist mode": "off",
-            "rate": 1,
-            "seq_no": 0,
-            "sleep": 0,
-            "will_sleep_in": 0,
-            "uuid": None,
-        }
-        self.presets: list[Preset] = []
+        self._presets: list[Preset] = []
 
     def disconnect(self) -> None:
         """Disconnect and/or cleanup socket client."""
@@ -235,6 +235,17 @@ class SlimClient:
     def next_media(self) -> MediaDetails | None:
         """Return the next/enqueued media(details), if any."""
         return self._next_media
+
+    @property
+    def presets(self) -> list[Preset]:
+        """Get/set the player presets."""
+        return self._presets
+
+    @presets.setter
+    def presets(self, presets: list[Preset]) -> None:
+        """Get/set the player presets."""
+        self._presets = presets[:9]
+        self.callback(EventType.PLAYER_PRESETS_UPDATED, self)
 
     async def stop(self) -> None:
         """Send stop command to player."""
@@ -378,12 +389,12 @@ class SlimClient:
         self._next_media = MediaDetails(
             url=url,
             mime_type=mime_type,
-            # metadata=metadata or {},
+            metadata=metadata or {},
             transition=transition,
             transition_duration=transition_duration,
         )
-        if metadata:
-            self._next_media.metadata = metadata
+        self.extra_data["playlist_timestamp"] = int(time.time())
+        self.signal_update()
         if enqueue:
             return
         # power on if we're not already powered

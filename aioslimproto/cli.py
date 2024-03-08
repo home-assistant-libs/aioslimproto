@@ -162,7 +162,11 @@ class SlimProtoCLI:
         # setup subscriptions
         self._unsub_callback = self.server.subscribe(
             self._on_player_event,
-            (EventType.PLAYER_UPDATED, EventType.PLAYER_CONNECTED),
+            (
+                EventType.PLAYER_UPDATED,
+                EventType.PLAYER_CONNECTED,
+                EventType.PLAYER_PRESETS_UPDATED,
+            ),
         )
         self._periodic_task = asyncio.create_task(self._do_periodic())
 
@@ -1082,13 +1086,38 @@ class SlimProtoCLI:
         """Forward player events."""
         if not event.player_id:
             return
-        for client in self._cometd_clients.values():
+        client = next(
+            (x for x in self._cometd_clients.values() if x.player_id == event.player_id), None
+        )
+        if not client:
+            return
+        # regular player updated (or connected) event, signal playerstatus
+        if event.type in (EventType.PLAYER_CONNECTED, EventType.PLAYER_UPDATED):
             if sub := client.slim_subscriptions.get(
                 f"/{client.client_id}/slim/playerstatus/{event.player_id}"
             ):
+                player = self.server.get_player(event.player_id)
+                if player.state == PlayerState.PLAYING:
+                    player.extra_data["playlist_timestamp"] = int(time.time())
                 self._handle_cometd_client_request(client, sub)
             if sub := client.slim_subscriptions.get(f"/{client.client_id}/slim/serverstatus"):
                 self._handle_cometd_client_request(client, sub)
+            return
+        # player presets updated, signal menustatus event
+        if event.type == EventType.PLAYER_PRESETS_UPDATED and (
+            sub := client.slim_subscriptions.get(
+                f"/{client.client_id}/slim/menustatus/{event.player_id}"
+            )
+        ):
+            menu = await self._handle_menu(event.player_id)
+            await client.queue.put(
+                {
+                    "channel": sub["data"]["response"],
+                    "id": sub["id"],
+                    "data": [event.player_id, menu["item_loop"], "replace", event.player_id],
+                    "ext": {"priority": sub["data"].get("priority")},
+                }
+            )
 
     async def _do_periodic(self) -> None:
         """Execute periodic sending of state and cleanup."""
