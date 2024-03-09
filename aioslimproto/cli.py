@@ -1096,9 +1096,6 @@ class SlimProtoCLI:
             if sub := client.slim_subscriptions.get(
                 f"/{client.client_id}/slim/playerstatus/{event.player_id}"
             ):
-                player = self.server.get_player(event.player_id)
-                if player.state == PlayerState.PLAYING:
-                    player.extra_data["playlist_timestamp"] = int(time.time())
                 self._handle_cometd_client_request(client, sub)
             if sub := client.slim_subscriptions.get(f"/{client.client_id}/slim/serverstatus"):
                 self._handle_cometd_client_request(client, sub)
