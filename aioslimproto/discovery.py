@@ -46,7 +46,7 @@ class ClientDiscoveryDatagram:
 
     def __repr__(self):
         """Print the class contents."""
-        return "<{} device={!r} firmware={!r} client={!r}>".format(
+        return "<{} device={!r} firmware={!r} client={!r}>".format(  # noqa:UP032
             self.__class__.__name__,
             self.device,
             self.firmware,
