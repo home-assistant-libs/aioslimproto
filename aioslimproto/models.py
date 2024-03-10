@@ -285,8 +285,11 @@ class CometDResponse(TypedDict):
 class SlimSubscribeData(CometDResponse):
     """CometD SlimSubscribe Data."""
 
-    response: str  # e.g. '/slim/serverstatus',  the channel all messages should be sent back on
-    request: tuple[str, list[str | int]]  # [ '', [ 'serverstatus', 0, 50, 'subscribe:60' ]
+    response: str  # e.g. '/slim/serverstatus',  the channel all messages should be sent back on  # noqa: E501
+    request: tuple[
+        str,
+        list[str | int],
+    ]  # [ '', [ 'serverstatus', 0, 50, 'subscribe:60' ]
     priority: int  # # optional priority value, is passed-through with the response
 
 
@@ -298,7 +301,9 @@ class SlimSubscribeMessage(CometDResponse):
     data: SlimSubscribeData
 
 
-class PlayerItem(TypedDict):  # noqa: D101
+class PlayerItem(TypedDict):
+    """PlayerItem Params TypedDict definition."""
+
     playerindex: str
     playerid: str
     name: str
@@ -316,7 +321,9 @@ class PlayerItem(TypedDict):  # noqa: D101
     ip: str
 
 
-class PlayersResponse(TypedDict):  # noqa: D101
+class PlayersResponse(TypedDict):
+    """PlayerItem Params TypedDict definition."""
+
     count: int
     players_loop: list[PlayerItem]
 
@@ -341,7 +348,9 @@ PlaylistItem = TypedDict(
 )
 
 
-class MenuItemParams(TypedDict):  # noqa: D101
+class MenuItemParams(TypedDict):
+    """MenuItems Params TypedDict definition."""
+
     track_id: str | int
     playlist_index: int
 

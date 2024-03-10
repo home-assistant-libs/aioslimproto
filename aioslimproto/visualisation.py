@@ -15,7 +15,7 @@ class NoVisualisation:
 
     id = 0
 
-    def pack(self):
+    def pack(self) -> None:
         """Pack data for sending."""
         return struct.pack("!BB", self.id, 0)
 
@@ -25,7 +25,7 @@ class WaveForm:
 
     id = 3
 
-    def pack(self):
+    def pack(self) -> None:
         """Pack data for sending."""
         return struct.pack("!BB", self.id, 0)
 
@@ -64,15 +64,15 @@ class SpectrumAnalyser:
 
         def __init__(
             self,
-            position,
-            width,
-            orientation=Orientation.ltr,
-            bar_width=4,
-            bar_space=1,
-            bar_grey=1,
-            cap_grey=3,
-            clipping=Clipping.clip_higher,
-        ):
+            position: int,
+            width: int,
+            orientation: Orientation = Orientation.ltr,
+            bar_width: int = 4,
+            bar_space: int = 1,
+            bar_grey: int = 1,
+            cap_grey: int = 3,
+            clipping: int = Clipping.clip_higher,
+        ) -> None:
             """Init."""
             self.position = position
             self.width = width
@@ -83,7 +83,7 @@ class SpectrumAnalyser:
             self.cap_grey = cap_grey
             self.clipping = clipping
 
-        def pack(self):
+        def pack(self) -> None:
             """Pack data for sending."""
             return struct.pack(
                 "!8I",
@@ -99,12 +99,12 @@ class SpectrumAnalyser:
 
     def __init__(
         self,
-        channels=Channels.stereo,
-        bandwidth=Bandwidth.high,
-        preemphasis=0x10000,
-        left=SpectrumChannel(position=0, width=160),
-        right=SpectrumChannel(position=160, width=160),
-    ):
+        channels: int = Channels.stereo,
+        bandwidth: int = Bandwidth.high,
+        preemphasis: int = 0x10000,
+        left: SpectrumChannel = SpectrumChannel(position=0, width=160),  # noqa: B008
+        right: SpectrumChannel = SpectrumChannel(position=160, width=160),  # noqa: B008
+    ) -> None:
         """Init."""
         self.channels = channels
         self.bandwidth = bandwidth
@@ -112,7 +112,7 @@ class SpectrumAnalyser:
         self.left = left
         self.right = right
 
-    def pack(self):
+    def pack(self) -> None:
         """Pack data for sending."""
         # Parameters for the spectrum analyzer:
         #   0 - Channels: stereo == 0, mono == 1
@@ -157,12 +157,12 @@ class VUMeter:
     class VUMeterChannel:
         """VUMeterChannel."""
 
-        def __init__(self, position, width):
+        def __init__(self, position: int, width: int) -> None:
             """Init."""
             self.position = position
             self.width = width
 
-        def pack(self):
+        def pack(self) -> None:
             """Pack data for sending."""
             return struct.pack(
                 "!2I",
@@ -172,18 +172,18 @@ class VUMeter:
 
     def __init__(
         self,
-        style=Style.analog,
-        channels=Channels.stereo,
-        left=VUMeterChannel(0, 160),
-        right=VUMeterChannel(160, 160),
-    ):
+        style: int = Style.analog,
+        channels: int = Channels.stereo,
+        left: VUMeterChannel = VUMeterChannel(0, 160),  # noqa: B008
+        right: VUMeterChannel = VUMeterChannel(160, 160),  # noqa: B008
+    ) -> None:
         """Init."""
         self.style = style
         self.channels = channels
         self.left = left
         self.right = right
 
-    def pack(self):
+    def pack(self) -> None:
         """Pack data for sending."""
         # Parameters for the vumeter:
         #   0 - Channels: stereo == 0, mono == 1
@@ -217,14 +217,14 @@ class VUMeterESP32:
 
     def __init__(
         self,
-        style=Style.analog,
-        width=128,
-    ):
+        style: int = Style.analog,
+        width: int = 128,
+    ) -> None:
         """Init."""
         self.style = style
         self.width = width
 
-    def pack(self):
+    def pack(self) -> None:
         """Pack data for sending."""
         return struct.pack("!BBII", self.id, 2, self.width, self.style)
 
@@ -234,10 +234,10 @@ class SpectrumAnalyserESP32:
 
     id = 0x12
 
-    def __init__(self, width=128):
+    def __init__(self, width: int = 128) -> None:
         """Init."""
         self.width = width
 
-    def pack(self):
+    def pack(self) -> None:
         """Pack data for sending."""
         return struct.pack("!BBIII", self.id, 3, self.width, 8, 25)
