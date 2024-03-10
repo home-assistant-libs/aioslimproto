@@ -155,8 +155,8 @@ class SlimServer:
         self.logger.debug("Socket client connected: %s", addr)
 
         def client_callback(
-            event_type: EventType,
             client: SlimClient,
+            event_type: EventType,
             data: Any = None,
         ) -> None:
             player_id = client.player_id
