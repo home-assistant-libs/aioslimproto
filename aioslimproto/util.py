@@ -11,24 +11,22 @@ from urllib.parse import parse_qsl
 from .const import FALLBACK_CODECS
 
 
-def get_ip():
+def get_ip() -> str:
     """Get primary IP-address for this host."""
-    # pylint: disable=broad-except,no-member
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         # doesn't even have to be reachable
         sock.connect(("10.255.255.255", 1))
         _ip = sock.getsockname()[0]
-    except Exception:
+    except Exception:  # noqa: BLE001
         _ip = "127.0.0.1"
     finally:
         sock.close()
     return _ip
 
 
-def get_hostname():
+def get_hostname() -> str:
     """Get hostname for this machine."""
-    # pylint:disable=no-member
     return socket.gethostname()
 
 
@@ -39,12 +37,12 @@ async def select_free_port(range_start: int, range_end: int) -> int:
         """Check if port is in use."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _sock:
             try:
-                _sock.bind(("0.0.0.0", port))
+                _sock.bind(("0.0.0.0", port))  # noqa: S104
             except OSError:
                 return True
         return False
 
-    def _select_free_port():
+    def _select_free_port() -> int:
         for port in range(range_start, range_end):
             if not is_port_in_use(port):
                 return port
@@ -56,6 +54,7 @@ async def select_free_port(range_start: int, range_end: int) -> int:
 
 def parse_capabilities(helo_data: bytes) -> dict[str, Any]:
     """Try to parse device capabilities from HELO string."""
+    # ruff: noqa: E501, ERA001
     # b"\x0c\x00\xb8'\xeb:D\xa2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     # x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00Model=squeezelite,
     # AccuratePlayPoints=1,HasDigitalOut=1,HasPolarityInversion=1,Firmware=v1.9.0-1121-pCP,
@@ -75,11 +74,14 @@ def parse_capabilities(helo_data: bytes) -> dict[str, Any]:
             for codec in ("alc", "aac", "ogg", "ogf", "flc", "aif", "pcm", "mp3")
             if codec in info
         ] or FALLBACK_CODECS
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001
         # I have no idea if this message is the same for all device types
         # so a big try..except around it
 
-        logging.getLogger(__name__).exception("Error while parsing device info", exc_info=exc)
+        logging.getLogger(__name__).exception(
+            "Error while parsing device info",
+            exc_info=exc,
+        )
         logging.getLogger(__name__).debug(helo_data)
     return params
 

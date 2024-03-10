@@ -16,13 +16,13 @@ https://gist.github.com/samtherussell/335bf9ba75363bd167d2470b8689d9f2
 from __future__ import annotations
 
 import asyncio
-import json
-import time
-import urllib.parse
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
+import json
+import time
 from typing import TYPE_CHECKING, Any
+import urllib.parse
 from uuid import uuid1
 
 from aiohttp import web
@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from .client import SlimClient
     from .server import SlimServer
 
-# ruff: noqa: ARG004,ARG002,PLR0912
+# ruff: noqa: ARG004,ARG002,FBT001,FBT002,PLR0912,RUF006
 
 
 ArgsType = list[int | str]
@@ -141,22 +141,37 @@ class SlimProtoCLI:
         if self.cli_port_json == 0:
             self.cli_port_json = await select_free_port(9000, 9089)
         if self.cli_port is not None:
-            self.logger.info("Starting (legacy/telnet) SLIMProto CLI on port %s", self.cli_port)
+            self.logger.info(
+                "Starting (legacy/telnet) SLIMProto CLI on port %s",
+                self.cli_port,
+            )
             self._cli_server = await asyncio.start_server(
-                self._handle_cli_client, "0.0.0.0", self.cli_port
+                self._handle_cli_client,
+                "0.0.0.0",  # noqa: S104
+                self.cli_port,
             )
         if self.cli_port_json is not None:
-            self.logger.info("Starting SLIMProto JSON RPC CLI on port %s", self.cli_port_json)
+            self.logger.info(
+                "Starting SLIMProto JSON RPC CLI on port %s",
+                self.cli_port_json,
+            )
             self._webapp = web.Application(
                 logger=self.logger,
             )
             self._apprunner = web.AppRunner(self._webapp, access_log=None)
-            self._webapp.router.add_route("*", "/jsonrpc.js", self._handle_jsonrpc_client)
+            self._webapp.router.add_route(
+                "*",
+                "/jsonrpc.js",
+                self._handle_jsonrpc_client,
+            )
             self._webapp.router.add_route("*", "/cometd", self._handle_cometd_client)
             await self._apprunner.setup()
             # set host to None to bind to all addresses on both IPv4 and IPv6
             self._tcp_site = web.TCPSite(
-                self._apprunner, host=None, port=self.cli_port_json, shutdown_timeout=10
+                self._apprunner,
+                host=None,
+                port=self.cli_port_json,
+                shutdown_timeout=10,
             )
             await self._tcp_site.start()
         # setup subscriptions
@@ -196,7 +211,9 @@ class SlimProtoCLI:
             self._periodic_task = None
 
     async def _handle_cli_client(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
     ) -> None:
         """Handle new connection on the legacy CLI."""
         # https://raw.githubusercontent.com/Logitech/slimserver/public/7.8/HTML/EN/html/docs/cli-api.html
@@ -244,7 +261,9 @@ class SlimProtoCLI:
 
                     if isinstance(cmd_result, dict):
                         result_parts = dict_to_strings(cmd_result)
-                        result_str = " ".join(urllib.parse.quote(x) for x in result_parts)
+                        result_str = " ".join(
+                            urllib.parse.quote(x) for x in result_parts
+                        )
                     elif not cmd_result:
                         result_str = ""
                     else:
@@ -269,7 +288,7 @@ class SlimProtoCLI:
                 await writer.drain()
         except ConnectionResetError:
             pass
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             self.logger.debug("Error handling CLI command", exc_info=err)
         finally:
             self.logger.debug("Client disconnected from Telnet CLI")
@@ -323,7 +342,11 @@ class SlimProtoCLI:
                 # pull clientId out of unsubscribe
                 clientid = cometd_msg["data"]["unsubscribe"].split("/")[1]
             assert clientid, "No clientID provided"
-            logger.debug("Incoming message for channel '%s' - clientid: %s", channel, clientid)
+            logger.debug(
+                "Incoming message for channel '%s' - clientid: %s",
+                channel,
+                clientid,
+            )
 
             # messageid is optional but if provided we must pass it along
             msgid = cometd_msg.get("id", "")
@@ -338,14 +361,17 @@ class SlimProtoCLI:
                             "channel": channel,
                             "clientId": None,
                             "successful": False,
-                            "timestamp": time.strftime("%a, %d %b %Y %H:%M:%S %Z", time.gmtime()),
+                            "timestamp": time.strftime(
+                                "%a, %d %b %Y %H:%M:%S %Z",
+                                time.gmtime(),
+                            ),
                             "error": "invalid clientId",
                             "advice": {
                                 "reconnect": "handshake",
                                 "interval": 0,
                             },
-                        }
-                    ]
+                        },
+                    ],
                 )
 
             # get the cometd_client object for the clientid
@@ -369,7 +395,7 @@ class SlimProtoCLI:
                             "interval": 0,
                             "timeout": 60000,
                         },
-                    }
+                    },
                 )
                 # playerid (mac) and uuid belonging to the client is sent in the ext field
                 if player_id := cometd_msg.get("ext", {}).get("mac"):
@@ -390,12 +416,15 @@ class SlimProtoCLI:
                         "channel": channel,
                         "clientId": clientid,
                         "successful": True,
-                        "timestamp": time.strftime("%a, %d %b %Y %H:%M:%S %Z", time.gmtime()),
+                        "timestamp": time.strftime(
+                            "%a, %d %b %Y %H:%M:%S %Z",
+                            time.gmtime(),
+                        ),
                         "advice": {
                             # update interval for streaming mode
-                            "interval": 5000 if streaming else 0
+                            "interval": 5000 if streaming else 0,
                         },
-                    }
+                    },
                 )
                 # TODO: do we want to implement long-polling support too ?
                 # https://github.com/Logitech/slimserver/blob/d9ebda7ebac41e82f1809dd85b0e4446e0c9be36/Slim/Web/Cometd.pm#L292
@@ -411,9 +440,12 @@ class SlimProtoCLI:
                             "channel": channel,
                             "clientId": clientid,
                             "successful": True,
-                            "timestamp": time.strftime("%a, %d %b %Y %H:%M:%S %Z", time.gmtime()),
-                        }
-                    ]
+                            "timestamp": time.strftime(
+                                "%a, %d %b %Y %H:%M:%S %Z",
+                                time.gmtime(),
+                            ),
+                        },
+                    ],
                 )
 
             elif channel == "/meta/subscribe":
@@ -425,7 +457,7 @@ class SlimProtoCLI:
                         "clientId": clientid,
                         "successful": True,
                         "subscription": cometd_msg["subscription"],
-                    }
+                    },
                 )
 
             elif channel == "/meta/unsubscribe":
@@ -438,10 +470,10 @@ class SlimProtoCLI:
                         "clientId": clientid,
                         "successful": True,
                         "subscription": cometd_msg["subscription"],
-                    }
+                    },
                 )
             elif channel == "/slim/subscribe":
-                # ruff: noqa: E501
+                # ruff: noqa: E501, ERA001
                 # A request to execute & subscribe to some Logitech Media Server event
                 # A valid /slim/subscribe message looks like this:
                 # {
@@ -458,13 +490,16 @@ class SlimProtoCLI:
                         "channel": channel,
                         "clientId": clientid,
                         "successful": True,
-                    }
+                    },
                 )
-                cometd_client.slim_subscriptions[cometd_msg["data"]["response"]] = cometd_msg
+                cometd_client.slim_subscriptions[cometd_msg["data"]["response"]] = (
+                    cometd_msg
+                )
                 # Return one-off result now, rest is handled by the subscription logic
                 self._handle_cometd_client_request(cometd_client, cometd_msg)
 
             elif channel == "/slim/unsubscribe":
+                # ruff: noqa: E501, ERA001
                 # A request to unsubscribe from a Logitech Media Server event, this is not the same as /meta/unsubscribe
                 # A valid /slim/unsubscribe message looks like this:
                 # {
@@ -478,11 +513,15 @@ class SlimProtoCLI:
                         "channel": channel,
                         "clientId": clientid,
                         "successful": True,
-                    }
+                    },
                 )
-                cometd_client.slim_subscriptions.pop(cometd_msg["data"]["unsubscribe"], None)
+                cometd_client.slim_subscriptions.pop(
+                    cometd_msg["data"]["unsubscribe"],
+                    None,
+                )
 
             elif channel == "/slim/request":
+                # ruff: noqa: E501, ERA001
                 # A request to execute a one-time Logitech Media Server event
                 # A valid /slim/request message looks like this:
                 # {
@@ -495,7 +534,9 @@ class SlimProtoCLI:
                 #   }
                 if not msgid:
                     # If the caller does not want the response, id will be undef
-                    logger.debug("Not sending response to request, caller does not want it")
+                    logger.debug(
+                        "Not sending response to request, caller does not want it",
+                    )
                 else:
                     # This response is optional, but we do it anyway
                     response.append(
@@ -504,7 +545,7 @@ class SlimProtoCLI:
                             "channel": channel,
                             "clientId": clientid,
                             "successful": True,
-                        }
+                        },
                     )
                     self._handle_cometd_client_request(cometd_client, cometd_msg)
             else:
@@ -516,7 +557,7 @@ class SlimProtoCLI:
                         "id": msgid,
                         "clientId": clientid,
                         "successful": True,
-                    }
+                    },
                 )
         # append any remaining messages from the queue
         while True:
@@ -564,7 +605,9 @@ class SlimProtoCLI:
         return resp
 
     def _handle_cometd_client_request(
-        self, client: CometDClient, cometd_request: dict[str, Any]
+        self,
+        client: CometDClient,
+        cometd_request: dict[str, Any],
     ) -> None:
         """
         Handle CometD request on the json CLI.
@@ -580,7 +623,7 @@ class SlimProtoCLI:
                     "id": cometd_request["id"],
                     "data": result,
                     "ext": {"priority": cometd_request["data"].get("priority")},
-                }
+                },
             )
 
         asyncio.create_task(_handle())
@@ -596,7 +639,11 @@ class SlimProtoCLI:
         player_id = params[0]
         command = str(params[1][0])
         args, kwargs = parse_args(params[1][1:])
-        if player_id and "seq_no" in kwargs and (player := self.server.get_player(player_id)):
+        if (
+            player_id
+            and "seq_no" in kwargs
+            and (player := self.server.get_player(player_id))
+        ):
             player.extra_data["seq_no"] = int(kwargs["seq_no"])
         if handler := getattr(self, f"_handle_{command}", None):
             # run handler for command
@@ -701,7 +748,7 @@ class SlimProtoCLI:
                         "URL": str(index),
                         "text": preset.text,
                         "type": "audio",
-                    }
+                    },
                 )
                 preset_loop.append(1)
 
@@ -723,8 +770,8 @@ class SlimProtoCLI:
                             "cmd": ["contextmenu"],
                             "player": 0,
                             "params": {"context": "playlist", "menu": "track"},
-                        }
-                    }
+                        },
+                    },
                 },
                 "preset_loop": preset_loop,
                 "preset_data": preset_data,
@@ -779,7 +826,7 @@ class SlimProtoCLI:
                 "player count": len(players),
                 "other player count": 0,
                 "other_players_loop": [],
-            }
+            },
         )
 
     async def _handle_firmwareupgrade(
@@ -815,7 +862,7 @@ class SlimProtoCLI:
         arg = args[0] if args else "?"
         player = self.server.get_player(player_id)
         if not player:
-            return
+            return None
         # <playerid> mixer volume <0 .. 100|-100 .. +100|?>
         if subcommand == "volume" and isinstance(arg, int):
             await player.volume_set(arg)
@@ -852,12 +899,18 @@ class SlimProtoCLI:
         # explicit "-" or "+" character before a number of seconds you would like to seek.
         player = self.server.get_player(player_id)
         if not player:
-            return
+            return None
         if number == "?":
             return int(player.elapsed_seconds)
         raise NotImplementedError("No handler for seek")
 
-    async def _handle_power(self, player_id: str, value: str | int, *args, **kwargs) -> int | None:
+    async def _handle_power(
+        self,
+        player_id: str,
+        value: str | int,
+        *args,
+        **kwargs,
+    ) -> int | None:
         """Handle player `time` command."""
         # <playerid> power <0|1|?|>
         # The "power" command turns the player on or off.
@@ -932,19 +985,19 @@ class SlimProtoCLI:
         """Handle player 'button' command."""
         player = self.server.get_player(player_id)
         if not player:
-            return None
+            return
         if subcommand == "volup":
             await player.volume_up()
-            return None
+            return
         if subcommand == "voldown":
             await player.volume_down()
-            return None
+            return
         if subcommand == "power":
             await player.power(not player.powered)
-            return None
+            return
         if subcommand == "jump_fwd" and player.next_media:
             await player.next()
-            return None
+            return
         if subcommand.startswith("preset_") and subcommand.endswith(".single"):
             # only handle http-based presets, ignore/forward all other
             preset_id = subcommand.split("preset_")[1].split(".")[0]
@@ -954,7 +1007,10 @@ class SlimProtoCLI:
                 if preset.uri.startswith("http"):
                     await player.play_url(
                         preset.uri,
-                        metadata=MediaMetadata(title=preset.text, image_url=preset.icon),
+                        metadata=MediaMetadata(
+                            title=preset.text,
+                            image_url=preset.icon,
+                        ),
                     )
 
         raise NotImplementedError(f"No handler for button/{subcommand}")
@@ -1047,7 +1103,7 @@ class SlimProtoCLI:
                                 "nextWindow": "refresh",
                             },
                         },
-                    }
+                    },
                 )
         return {
             "item_loop": menu_items[offset:limit],
@@ -1087,23 +1143,30 @@ class SlimProtoCLI:
         if not event.player_id:
             return
         client = next(
-            (x for x in self._cometd_clients.values() if x.player_id == event.player_id), None
+            (
+                x
+                for x in self._cometd_clients.values()
+                if x.player_id == event.player_id
+            ),
+            None,
         )
         if not client:
             return
         # regular player updated (or connected) event, signal playerstatus
         if event.type in (EventType.PLAYER_CONNECTED, EventType.PLAYER_UPDATED):
             if sub := client.slim_subscriptions.get(
-                f"/{client.client_id}/slim/playerstatus/{event.player_id}"
+                f"/{client.client_id}/slim/playerstatus/{event.player_id}",
             ):
                 self._handle_cometd_client_request(client, sub)
-            if sub := client.slim_subscriptions.get(f"/{client.client_id}/slim/serverstatus"):
+            if sub := client.slim_subscriptions.get(
+                f"/{client.client_id}/slim/serverstatus",
+            ):
                 self._handle_cometd_client_request(client, sub)
             return
         # player presets updated, signal menustatus event
         if event.type == EventType.PLAYER_PRESETS_UPDATED and (
             sub := client.slim_subscriptions.get(
-                f"/{client.client_id}/slim/menustatus/{event.player_id}"
+                f"/{client.client_id}/slim/menustatus/{event.player_id}",
             )
         ):
             menu = await self._handle_menu(event.player_id)
@@ -1111,9 +1174,14 @@ class SlimProtoCLI:
                 {
                     "channel": sub["data"]["response"],
                     "id": sub["id"],
-                    "data": [event.player_id, menu["item_loop"], "replace", event.player_id],
+                    "data": [
+                        event.player_id,
+                        menu["item_loop"],
+                        "replace",
+                        event.player_id,
+                    ],
                     "ext": {"priority": sub["data"].get("priority")},
-                }
+                },
             )
 
     async def _do_periodic(self) -> None:
@@ -1158,7 +1226,8 @@ def dict_to_strings(source: dict) -> list[str]:
 
 
 def menu_item_from_media_details(
-    media_item: MediaDetails, include_actions: bool = False
+    media_item: MediaDetails,
+    include_actions: bool = False,
 ) -> PlaylistItem:
     """Parse (menu) MediaItem from MA MediaItem."""
     go_action = {

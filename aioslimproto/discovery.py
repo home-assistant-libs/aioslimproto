@@ -1,16 +1,14 @@
-"""Logic for slimproto clients to discover our (emulated) server on the local network."""
+"""Logic for slimproto clients to discover the server on the local network."""
 
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 import logging
 import socket
 import struct
-from collections import OrderedDict
 
 LOGGER = logging.getLogger(__name__)
-
-# pylint:disable=consider-using-f-string
 
 
 async def start_discovery(
@@ -24,8 +22,15 @@ async def start_discovery(
     """Start discovery for players."""
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
-        lambda: DiscoveryProtocol(ip_address, control_port, cli_port, cli_port_json, name, uuid),
-        local_addr=("0.0.0.0", control_port),
+        lambda: DiscoveryProtocol(
+            ip_address,
+            control_port,
+            cli_port,
+            cli_port_json,
+            name,
+            uuid,
+        ),
+        local_addr=("0.0.0.0", control_port),  # noqa: S104
     )
     return transport
 
@@ -37,16 +42,16 @@ class ClientDiscoveryDatagram:
     firmware = None
     client = None
 
-    def __init__(self, data):
+    def __init__(self, data: bytes) -> None:
         """Initialize class."""
         msg = struct.unpack("!cxBB8x6B", data)
         self.device = msg[1]
         self.firmware = hex(msg[2])
         self.client = ":".join([f"{x:02x}" for x in msg[3:]])
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Print the class contents."""
-        return "<{} device={!r} firmware={!r} client={!r}>".format(  # noqa:UP032
+        return "<{} device={!r} firmware={!r} client={!r}>".format(
             self.__class__.__name__,
             self.device,
             self.firmware,
@@ -57,7 +62,7 @@ class ClientDiscoveryDatagram:
 class TLVDiscoveryRequestDatagram:
     """Description of a discovery request datagram."""
 
-    def __init__(self, data: str):
+    def __init__(self, data: str) -> None:
         """Initialize class."""
         requestdata = OrderedDict()
         idx = 0
@@ -74,7 +79,7 @@ class TLVDiscoveryRequestDatagram:
             requestdata[key] = val
         self.data = requestdata
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Pretty print class."""
         return f"<{self.__class__.__name__} data={self.data.items()!r}>"
 
@@ -90,7 +95,7 @@ class DiscoveryProtocol:
         cli_port_json: int | None,
         name: str,
         uuid: str,
-    ):
+    ) -> None:
         """Initialize class."""
         self.ip_address = ip_address
         self.control_port = control_port
@@ -100,7 +105,7 @@ class DiscoveryProtocol:
         self.uuid = uuid
         self.transport = None
 
-    def connection_made(self, transport):
+    def connection_made(self, transport) -> None:  # noqa: ANN001
         """Call on connection."""
         self.transport = transport
         # Allow receiving multicast broadcasts
@@ -110,17 +115,19 @@ class DiscoveryProtocol:
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
     @classmethod
-    def error_received(cls, exc):
+    def error_received(cls: type[DiscoveryProtocol], exc) -> None:  # noqa: ANN001
         """Call on Error."""
         LOGGER.error(exc)
 
     @classmethod
-    def connection_lost(cls, *args, **kwargs):  # noqa: ARG003
+    def connection_lost(cls: type[DiscoveryProtocol], *args, **kwargs) -> None:  # noqa: ARG003
         """Call on Connection lost."""
-        # pylint: disable=unused-argument
         LOGGER.debug("Connection lost to discovery")
 
-    def build_tlv_response(self, requestdata: OrderedDict[str, str]) -> OrderedDict[str, str]:
+    def build_tlv_response(
+        self,
+        requestdata: OrderedDict[str, str],
+    ) -> OrderedDict[str, str]:
         """Build TLV Response message."""
         responsedata = OrderedDict()
         for key in requestdata:
@@ -144,7 +151,6 @@ class DiscoveryProtocol:
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """Handle Datagram received callback."""
-        # pylint: disable=broad-except
         try:
             # tlv discovery request
             if data.startswith(b"e"):
@@ -159,8 +165,9 @@ class DiscoveryProtocol:
                 self.send_tlv_discovery_response(requestdata, addr)
             # udp/legacy discovery request
             if data.startswith(b"d"):
-                # Discovery request: note that SliMP3 sends deviceid and revision in the discovery
-                # request, but the revision is wrong (v 2.2 sends revision 1.1). Oops.
+                # ruff: noqa: E501
+                # Discovery request: note that SliMP3 sends deviceid and revision in the
+                # discovery request, but the revision is wrong (v 2.2 sends revision 1.1).
                 # also, it does not send the MAC address until the [h]ello packet.
                 # Squeezebox sends all fields correctly.
                 dgram = ClientDiscoveryDatagram(data)
@@ -182,7 +189,9 @@ class DiscoveryProtocol:
         self.transport.sendto(dgram.encode(), addr)
 
     def send_tlv_discovery_response(
-        self, requestdata: OrderedDict[str, str], addr: tuple[str, int]
+        self,
+        requestdata: OrderedDict[str, str],
+        addr: tuple[str, int],
     ) -> None:
         """Send TLV discovery response message."""
         parts = ["E"]  # new discovery format

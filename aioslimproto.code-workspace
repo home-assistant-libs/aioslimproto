@@ -1,20 +1,20 @@
 {
-	"folders": [
-		{
-			"path": "."
-		}
-	],
-	"settings": {},
-"launch": {
-		"configurations": [
-			{
-				"name": "AIOSlimProto",
-				"type": "python",
-				"request": "launch",
-				"program": "./script/example.py",
-				"justMyCode": false
-			  },
-		],
-		"compounds": []
-	}
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {},
+  "launch": {
+    "configurations": [
+      {
+        "name": "AIOSlimProto",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "./scripts/example.py",
+        "justMyCode": false
+      }
+    ],
+    "compounds": []
+  }
 }

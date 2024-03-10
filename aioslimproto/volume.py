@@ -5,17 +5,21 @@ Copyright 2010 Doug Winter
 https://github.com/winjer/squeal/blob/master/src/squeal/player/volume.py
 """
 
+from __future__ import annotations
+
+from typing import ClassVar
+
 
 class SlimProtoVolume:
     """Represents a sound volume. This is an awful lot more complex than it sounds."""
 
-    minimum = 0
-    maximum = 100
-    step = 1
+    minimum: int = 0
+    maximum: int = 100
+    step: int = 1
 
     # this map is taken from Slim::Player::Squeezebox2 in the squeezecenter source
     # i don't know how much magic it contains, or any way I can test it
-    old_map = [
+    old_map: ClassVar[list[int]] = [
         0,
         1,
         1,
@@ -120,35 +124,39 @@ class SlimProtoVolume:
     ]
 
     # new gain parameters, from the same place
-    total_volume_range = -50  # dB
-    step_point = -1  # Number of steps, up from the bottom, where a 2nd volume ramp kicks in.
-    step_fraction = 1  # fraction of totalVolumeRange where alternate volume ramp kicks in.
+    total_volume_range: int = -50  # dB
+    step_point: int = (
+        -1
+    )  # Number of steps, up from the bottom, where a 2nd volume ramp kicks in.
+    step_fraction: int = (
+        1  # fraction of totalVolumeRange where alternate volume ramp kicks in.
+    )
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize class."""
         self.volume = 50
 
-    def increment(self):
+    def increment(self) -> None:
         """Increment the volume."""
         self.volume += self.step
         if self.volume > self.maximum:
             self.volume = self.maximum
 
-    def decrement(self):
+    def decrement(self) -> None:
         """Decrement the volume."""
         self.volume -= self.step
         if self.volume < self.minimum:
             self.volume = self.minimum
 
-    def old_gain(self):
+    def old_gain(self) -> int:
         """Return the "Old" gain value as required by the squeezebox."""
         if self.volume <= 0:
             return 0
         return self.old_map[self.volume]
 
-    def decibels(self):
-        """Return the "new" gain value."""
-        # pylint: disable=invalid-name
+    def decibels(self) -> float:
+        """Return the "new" gain value in decibels."""
+        # ruff: noqa: ERA001
 
         step_db = self.total_volume_range * self.step_fraction
         max_volume_db = 0  # different on the boom?
@@ -171,7 +179,7 @@ class SlimProtoVolume:
             y1 = self.total_volume_range
         return m * (x2 - x1) + y1
 
-    def new_gain(self):
+    def new_gain(self) -> float:
         """Return new gainvalue of the volume control."""
         if self.volume <= 0:
             return 0

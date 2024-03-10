@@ -29,8 +29,10 @@ from .visualisation import (
 if TYPE_CHECKING:
     from .client import SlimClient
 
-FONTDIR = os.path.join(os.path.dirname(__file__), "font")
+FONTDIR = os.path.join(os.path.dirname(__file__), "font")  # noqa: PTH120, PTH118
 AVAILABLE_FONTS = [f[: -len(".ttf")] for f in os.listdir(FONTDIR) if f.endswith(".ttf")]
+
+# ruff: noqa: FBT001,FBT002
 
 
 class Font:
@@ -38,10 +40,16 @@ class Font:
 
     def __init__(self, name: str) -> None:
         """Initiatlzie Font."""
-        self.filename = os.path.join(FONTDIR, name + ".ttf")
+        self.filename = os.path.join(FONTDIR, name + ".ttf")  # noqa: PTH118
         self.cache: dict[int, ImageFont.FreeTypeFont] = {}
 
-    def render(self, text: str, size: int = 15, linewidth: int = 320, lineheight: int = 0) -> Image:
+    def render(
+        self,
+        text: str,
+        size: int = 15,
+        linewidth: int = 320,
+        lineheight: int = 0,
+    ) -> Image:
         """Return a PIL image with this string rendered into it."""
         if size not in self.cache:
             self.cache[size] = ImageFont.truetype(self.filename, size)
@@ -50,7 +58,6 @@ class Font:
         height = lineheight or abs(bbox[1] - bbox[3]) + 2
         im = Image.new("1", (linewidth, height))
         draw = ImageDraw.Draw(im)
-        # draw.fontmode = "1"
         draw.text((0, 0), text, font=font, fill=255)
         return im
 
@@ -115,7 +122,12 @@ class SlimProtoDisplay:
         self.image.paste(0, (0, 0, self.width, 32))
         await self._render_display()
 
-    async def set_lines(self, line_one: str = "", line_two: str = "", fullscreen: str = "") -> None:
+    async def set_lines(
+        self,
+        line_one: str = "",
+        line_two: str = "",
+        fullscreen: str = "",
+    ) -> None:
         """Set (predefined) text lines on display."""
         if fullscreen:
             # clear regular lines when setting fullscreen
@@ -150,7 +162,10 @@ class SlimProtoDisplay:
         await self._render_display()
 
     async def _render_display(
-        self, transition: str = Transition.clear, offset: int = 0, param: int = 0
+        self,
+        transition: str = Transition.clear,
+        offset: int = 0,
+        param: int = 0,
     ) -> None:
         """Render display and send it to the player."""
 
@@ -158,9 +173,9 @@ class SlimProtoDisplay:
             """Return the packed frame ready for transmission."""
             pixmap = self.image.load()
             words = []
-            for col in range(0, self.width):
+            for col in range(self.width):
                 word = 0
-                for bit in range(0, 32):
+                for bit in range(32):
                     to_set = 1 if pixmap[col, 31 - bit] else 0
                     word += to_set << bit
                 words.append(word)
@@ -187,7 +202,9 @@ class SlimProtoDisplay:
                 data = SpectrumAnalyserESP32(width=self.width).pack()
             elif self.visualisation_type == VisualisationType.VU_METER_ANALOG and esp32:
                 data = VUMeterESP32(VUMeter.Style.analog, self.width).pack()
-            elif self.visualisation_type == VisualisationType.VU_METER_DIGITAL and esp32:
+            elif (
+                self.visualisation_type == VisualisationType.VU_METER_DIGITAL and esp32
+            ):
                 data = VUMeterESP32(VUMeter.Style.digital, self.width).pack()
             elif self.visualisation_type == VisualisationType.SPECTRUM_ANALYZER:
                 data = SpectrumAnalyser().pack()

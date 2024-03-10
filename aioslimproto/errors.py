@@ -1,7 +1,7 @@
 """Exceptions for SlimProto."""
 
 
-class SlimProtoException(Exception):
+class SlimProtoException(Exception):  # noqa: N818
     """Base exception for errors."""
 
 

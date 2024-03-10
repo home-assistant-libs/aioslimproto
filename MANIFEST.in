@@ -1,7 +1,0 @@
-include *.txt
-include *.ttf
-include README.rst
-include LICENSE
-graft aioslimproto
-recursive-exclude * *.py[co]
-recursive-exclude * *.DS_Store
