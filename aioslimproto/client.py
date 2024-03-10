@@ -293,7 +293,7 @@ class SlimClient:
         if not powered:
             await self.stop()
         power_int = 1 if powered else 0
-        await self._send_frame(b"aude", struct.pack("2B", power_int, 1))
+        await self.send_frame(b"aude", struct.pack("2B", power_int, 1))
         self._powered = powered
         self.signal_update()
         await self._render_display()
@@ -309,7 +309,7 @@ class SlimClient:
         self.volume_control.volume = volume_level
         old_gain = self.volume_control.old_gain()
         new_gain = self.volume_control.new_gain()
-        await self._send_frame(
+        await self.send_frame(
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
@@ -321,7 +321,7 @@ class SlimClient:
         self.volume_control.increment()
         old_gain = self.volume_control.old_gain()
         new_gain = self.volume_control.new_gain()
-        await self._send_frame(
+        await self.send_frame(
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
@@ -333,7 +333,7 @@ class SlimClient:
         self.volume_control.decrement()
         old_gain = self.volume_control.old_gain()
         new_gain = self.volume_control.new_gain()
-        await self._send_frame(
+        await self.send_frame(
             b"audg",
             struct.pack("!LLBBLL", old_gain, old_gain, 1, 255, new_gain, new_gain),
         )
@@ -345,7 +345,7 @@ class SlimClient:
         if self._muted == muted:
             return
         muted_int = 0 if muted else 1
-        await self._send_frame(b"aude", struct.pack("2B", muted_int, 0))
+        await self.send_frame(b"aude", struct.pack("2B", muted_int, 0))
         self._muted = muted
         self.signal_update()
 
@@ -496,7 +496,7 @@ class SlimClient:
         """Signal a player updated event to listeners."""
         self.callback(self, EventType.PLAYER_UPDATED)
 
-    async def _send_frame(self, command: bytes, data: bytes) -> None:
+    async def send_frame(self, command: bytes, data: bytes) -> None:
         """Send (raw) command to Squeeze player."""
         if self._reader.at_eof() or self._writer.is_closing():
             self.logger.debug("Socket is disconnected.")
@@ -629,7 +629,7 @@ class SlimClient:
             server_port,
             server_ip,
         )
-        await self._send_frame(b"strm", data + httpreq)
+        await self.send_frame(b"strm", data + httpreq)
 
     async def _process_helo(self, data: bytes) -> None:
         """Process incoming HELO event from player (player connected)."""
@@ -642,10 +642,10 @@ class SlimClient:
         self._capabilities = parse_capabilities(data)
         self.logger.debug("Player connected: %s", self.player_id)
         # Set some startup settings for the player
-        await self._send_frame(b"vers", b"7.9")
+        await self.send_frame(b"vers", b"7.9")
         # request player to send the player name
-        await self._send_frame(b"setd", struct.pack("B", 0xFE))
-        await self._send_frame(b"setd", struct.pack("B", 0))
+        await self.send_frame(b"setd", struct.pack("B", 0xFE))
+        await self.send_frame(b"setd", struct.pack("B", 0))
         # restore last power and volume levels
         # NOTE: this can be improved by storing the previous volume/power levels
         # so they can be restored when the player (re)connects.
@@ -922,7 +922,7 @@ class SlimClient:
                 content_type,
                 codc_msg,
             )
-            await self._send_frame(b"codc", codc_msg)
+            await self.send_frame(b"codc", codc_msg)
 
         # parse ICY metadata
         if "icy-name" in headers and not self.next_media.metadata.get("title"):
@@ -930,7 +930,7 @@ class SlimClient:
 
         # send continue (used when autoplay 1 or 3)
         if self._auto_play:
-            await self._send_frame(b"cont", b"1")
+            await self.send_frame(b"cont", b"1")
 
     def _process_setd(self, data: bytes) -> None:
         """Process incoming SETD message: Get/set player firmware settings."""
