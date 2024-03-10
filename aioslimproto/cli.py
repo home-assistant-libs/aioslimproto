@@ -273,7 +273,7 @@ class SlimProtoCLI:
                     # no handler found, forward as event
                     if player := self.server.get_player(player_id):
                         args_str = " ".join([command] + [str(x) for x in args])
-                        player.callback(EventType.PLAYER_CLI_EVENT, player, args_str)
+                        player.callback(player, EventType.PLAYER_CLI_EVENT, args_str)
                     else:
                         self.logger.warning(
                             "No handler for %s (player: %s - args: %s - kwargs: %s)",
@@ -660,7 +660,7 @@ class SlimProtoCLI:
         # no handler found, forward as event
         if player := self.server.get_player(player_id):
             args_str = " ".join([command] + [str(x) for x in args])
-            player.callback(EventType.PLAYER_CLI_EVENT, player, args_str)
+            player.callback(player, EventType.PLAYER_CLI_EVENT, args_str)
         else:
             self.logger.warning("No handler for %s", command)
         return None
