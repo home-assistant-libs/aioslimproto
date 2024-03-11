@@ -51,12 +51,7 @@ class ClientDiscoveryDatagram:
 
     def __repr__(self) -> str:
         """Print the class contents."""
-        return "<{} device={!r} firmware={!r} client={!r}>".format(
-            self.__class__.__name__,
-            self.device,
-            self.firmware,
-            self.client,
-        )
+        return f"<{self.__class__.__name__} device={self.device!r} firmware={self.firmware!r} client={self.client!r}>"
 
 
 class TLVDiscoveryRequestDatagram:
