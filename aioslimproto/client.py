@@ -581,6 +581,8 @@ class SlimClient:
                 if len(buffer) >= plen:
                     packet, buffer = buffer[8:plen], buffer[plen:]
                     operation = operation.strip(b"!").strip().decode().lower()
+                    if operation == "bye!":
+                        break
                     handler = getattr(self, f"_process_{operation}", None)
                     if handler is None:
                         self.logger.debug("No handler for %s", operation)
