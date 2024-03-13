@@ -168,10 +168,17 @@ class SlimServer:
                     return
 
             if event_type == EventType.PLAYER_CONNECTED:
-                prev = self._players.pop(player_id, None)
-                if prev is not None:
+                if (existing := self._players.get(player_id)) and existing.connected:
+                    # duplicate connection! we should ignore this
+                    self.logger.warning(
+                        "Duplicate connection detected for player %s",
+                        player_id,
+                    )
+                    client.disconnect()
+                    return
+                if existing:
                     # player reconnected while we did not yet cleanup the old socket
-                    prev.disconnect()
+                    existing.disconnect()
 
                 self._players[player_id] = client
 

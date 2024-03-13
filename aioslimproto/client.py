@@ -104,15 +104,15 @@ class SlimClient:
 
     def disconnect(self) -> None:
         """Disconnect and/or cleanup socket client."""
+        self._connected = False
         if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
         if self._heartbeat_task and not self._heartbeat_task.done():
             self._heartbeat_task.cancel()
 
-        if self._connected:
-            self._connected = False
-            if self._writer.can_write_eof():
-                self._writer.write_eof()
+        if self._writer.can_write_eof():
+            self._writer.write_eof()
+        if not self._writer.is_closing():
             self._writer.close()
 
     async def configure_display(
@@ -591,6 +591,7 @@ class SlimClient:
                     else:
                         asyncio.get_running_loop().call_soon(handler, packet)
         # EOF reached: socket is disconnected
+        self._connected = False
         self.logger.debug(
             "Socket disconnected: %s",
             self._writer.get_extra_info("peername"),
