@@ -104,15 +104,15 @@ class SlimClient:
 
     def disconnect(self) -> None:
         """Disconnect and/or cleanup socket client."""
+        self._connected = False
         if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
         if self._heartbeat_task and not self._heartbeat_task.done():
             self._heartbeat_task.cancel()
 
-        if self._connected:
-            self._connected = False
-            if self._writer.can_write_eof():
-                self._writer.write_eof()
+        if self._writer.can_write_eof():
+            self._writer.write_eof()
+        if not self._writer.is_closing():
             self._writer.close()
 
     async def configure_display(
@@ -388,7 +388,7 @@ class SlimClient:
           but wait for the buffer to be full.
         - send_flush: advanced option to flush the buffer before playback.
         """
-        self.logger.debug("play url: %s", url)
+        self.logger.debug("play url (enqueue: %s): %s", enqueue, url)
         if not url.startswith("http"):
             raise UnsupportedContentType(f"Invalid URL: {url}")  # noqa: TRY003
 
@@ -559,7 +559,7 @@ class SlimClient:
                 replay_gain=heartbeat_id,
             )
             await self._render_display()
-            await asyncio.sleep(5)
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
 
     async def _socket_reader(self) -> None:
         """Handle incoming data from socket."""
@@ -569,7 +569,7 @@ class SlimClient:
             try:
                 async with timeout(HEARTBEAT_INTERVAL * 2):
                     data = await self._reader.read(64)
-            except TimeoutError:
+            except (TimeoutError, ConnectionResetError):
                 break
             # handle incoming data from socket
             buffer = buffer + data
@@ -581,6 +581,8 @@ class SlimClient:
                 if len(buffer) >= plen:
                     packet, buffer = buffer[8:plen], buffer[plen:]
                     operation = operation.strip(b"!").strip().decode().lower()
+                    if operation == "bye!":
+                        break
                     handler = getattr(self, f"_process_{operation}", None)
                     if handler is None:
                         self.logger.debug("No handler for %s", operation)
@@ -589,6 +591,7 @@ class SlimClient:
                     else:
                         asyncio.get_running_loop().call_soon(handler, packet)
         # EOF reached: socket is disconnected
+        self._connected = False
         self.logger.debug(
             "Socket disconnected: %s",
             self._writer.get_extra_info("peername"),
@@ -775,6 +778,10 @@ class SlimClient:
         self.logger.debug("STMc received - connected.")
         # srtm-s command received. Guaranteed to be the first response to an strm-s.
         self._state = PlayerState.BUFFERING
+        self._current_media = self._next_media
+        self._next_media = None
+        self.extra_data["playlist_timestamp"] = int(time.time())
+        self.signal_update()
 
     def _process_stat_stmd(self, data: bytes) -> None:
         """Process incoming stat STMd message (decoder ready)."""
@@ -833,9 +840,6 @@ class SlimClient:
         """Process incoming stat STMs message: Playback of new track has started."""
         self.logger.debug("STMs received - playback of new track has started")
         self._state = PlayerState.PLAYING
-        self._current_media = self._next_media
-        self._next_media = None
-        self.extra_data["playlist_timestamp"] = int(time.time())
         self.signal_update()
         await self._render_display("playback_start")
 
@@ -925,7 +929,11 @@ class SlimClient:
             await self.send_frame(b"codc", codc_msg)
 
         # parse ICY metadata
-        if "icy-name" in headers and not self.next_media.metadata.get("title"):
+        if (
+            "icy-name" in headers
+            and self._next_media
+            and not self._next_media.metadata.get("title")
+        ):
             self._next_media.metadata["title"] = headers["icy-name"]
 
         # send continue (used when autoplay 1 or 3)
