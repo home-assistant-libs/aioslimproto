@@ -559,7 +559,7 @@ class SlimClient:
                 replay_gain=heartbeat_id,
             )
             await self._render_display()
-            await asyncio.sleep(5)
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
 
     async def _socket_reader(self) -> None:
         """Handle incoming data from socket."""
@@ -569,7 +569,7 @@ class SlimClient:
             try:
                 async with timeout(HEARTBEAT_INTERVAL * 2):
                     data = await self._reader.read(64)
-            except TimeoutError:
+            except (TimeoutError, ConnectionResetError):
                 break
             # handle incoming data from socket
             buffer = buffer + data
