@@ -388,7 +388,7 @@ class SlimClient:
           but wait for the buffer to be full.
         - send_flush: advanced option to flush the buffer before playback.
         """
-        self.logger.debug("play url: %s", url)
+        self.logger.debug("play url (enqueue: %s): %s", enqueue, url)
         if not url.startswith("http"):
             raise UnsupportedContentType(f"Invalid URL: {url}")  # noqa: TRY003
 
@@ -775,6 +775,10 @@ class SlimClient:
         self.logger.debug("STMc received - connected.")
         # srtm-s command received. Guaranteed to be the first response to an strm-s.
         self._state = PlayerState.BUFFERING
+        self._current_media = self._next_media
+        self._next_media = None
+        self.extra_data["playlist_timestamp"] = int(time.time())
+        self.signal_update()
 
     def _process_stat_stmd(self, data: bytes) -> None:
         """Process incoming stat STMd message (decoder ready)."""
@@ -833,9 +837,6 @@ class SlimClient:
         """Process incoming stat STMs message: Playback of new track has started."""
         self.logger.debug("STMs received - playback of new track has started")
         self._state = PlayerState.PLAYING
-        self._current_media = self._next_media
-        self._next_media = None
-        self.extra_data["playlist_timestamp"] = int(time.time())
         self.signal_update()
         await self._render_display("playback_start")
 
@@ -925,7 +926,11 @@ class SlimClient:
             await self.send_frame(b"codc", codc_msg)
 
         # parse ICY metadata
-        if "icy-name" in headers and not self.next_media.metadata.get("title"):
+        if (
+            "icy-name" in headers
+            and self._next_media
+            and not self._next_media.metadata.get("title")
+        ):
             self._next_media.metadata["title"] = headers["icy-name"]
 
         # send continue (used when autoplay 1 or 3)
