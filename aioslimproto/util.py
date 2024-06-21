@@ -74,7 +74,7 @@ def parse_capabilities(helo_data: bytes) -> dict[str, Any]:
             for codec in ("alc", "aac", "ogg", "ogf", "flc", "aif", "pcm", "mp3")
             if codec in info
         ] or FALLBACK_CODECS
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # I have no idea if this message is the same for all device types
         # so a big try..except around it
 

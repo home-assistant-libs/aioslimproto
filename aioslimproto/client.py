@@ -639,7 +639,7 @@ class SlimClient:
         self.logger.debug("HELO received: %s", data)
         # player connected, sends helo info message
         (dev_id, _, mac) = struct.unpack("BB6s", data[:8])
-        device_mac = ":".join("%02x" % x for x in mac)
+        device_mac = ":".join(f"{x:02x}" for x in mac)
         self._player_id = str(device_mac).lower()
         self._device_type = DEVICE_TYPE.get(dev_id, "unknown device")
         self._capabilities = parse_capabilities(data)
@@ -753,7 +753,7 @@ class SlimClient:
         if event == b"\x00\x00\x00\x00":
             # Presumed informational stat message
             return
-        event_handler = getattr(self, "_process_stat_%s" % event.lower(), None)
+        event_handler = getattr(self, f"_process_stat_{event.lower()}", None)
         if event_handler is None:
             self.logger.debug("Unhandled event: %s - event_data: %s", event, event_data)
         elif asyncio.iscoroutinefunction(event_handler):
