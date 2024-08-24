@@ -10,9 +10,9 @@ https://github.com/winjer/squeal/blob/master/src/squeal/player/display.py
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import struct
-import logging
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageDraw, ImageFont
@@ -174,7 +174,13 @@ class SlimProtoDisplay:
         def pack() -> bytes:
             """Return the packed frame ready for transmission."""
             if self.width != self.image.width:
-                self.logger.warn("Attempted to render %s x %s Image to %s x %s Display", self.image.width, self.image.height, self.width, self.height)
+                self.logger.warning(
+                    "Attempted to render %s x %s Image to %s x %s Display",
+                    self.image.width,
+                    self.image.height,
+                    self.width,
+                    self.height,
+                )
             pixmap = self.image.load()
             words = []
             for col in range(self.width):

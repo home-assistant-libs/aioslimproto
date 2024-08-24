@@ -139,14 +139,12 @@ class SlimProtoVolume:
     def increment(self) -> None:
         """Increment the volume."""
         self.volume += self.step
-        if self.volume > self.maximum:
-            self.volume = self.maximum
+        self.volume = min(self.volume, self.maximum)
 
     def decrement(self) -> None:
         """Decrement the volume."""
         self.volume -= self.step
-        if self.volume < self.minimum:
-            self.volume = self.minimum
+        self.volume = max(self.volume, self.minimum)
 
     def old_gain(self) -> int:
         """Return the "Old" gain value as required by the squeezebox."""

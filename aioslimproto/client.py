@@ -745,12 +745,13 @@ class SlimClient:
                 "code": code,
             },
         )
-    
+
     def _process_dsco(self, data: bytes) -> None:
         """Process incoming stat DSCO message (data stream disconnected)."""
         self.logger.debug("DSCO received - data stream disconnected.")
-        # Some players may send this to indicate they have disconnected from the data stream
-        # Either becasue the stream ended, or because they have finished buffering the current file
+        # Some players may send this to indicate they have disconnected
+        # from the data stream either because the stream ended, or because
+        # they have finished buffering the current file
 
     def _process_stat(self, data: bytes) -> None:
         """Redirect incoming STAT event from player to correct method."""
@@ -971,12 +972,13 @@ class SlimClient:
                 self.display_control.width = display_width
             if display_height:
                 self.display_control.height = display_height
-            
-            resolution = (f"{display_width} x {display_height}")
+
+            resolution = f"{display_width} x {display_height}"
             self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
 
             if self.display_control.image.width != display_width:
-                # If the display resolution reported by the player doesn't match the display resolution we're currently using
+                # If the display resolution reported by the player doesn't match
+                # the display resolution we're currently using
                 self.display_control = None
                 self.display_control = SlimProtoDisplay(self, display_width)
                 # Re-instanciate SlimProtoDisplay with the correct resolution parameters
