@@ -976,7 +976,9 @@ class SlimClient:
             resolution = f"{display_width} x {display_height}"
             self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
 
-            if self.display_control.image.width != display_width:
+            if display_width == 0 or display_height == 0:
+                self.display_control.disabled(True)  # noqa: FBT003
+            elif self.display_control.image.width != display_width:
                 # If the display resolution reported by the player doesn't match
                 # the display resolution we're currently using
                 self.display_control = None
