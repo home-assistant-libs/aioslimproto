@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import struct
+import logging
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageDraw, ImageFont
@@ -108,6 +109,7 @@ class SlimProtoDisplay:
         visualisation_type: VisualisationType = VisualisationType.SPECTRUM_ANALYZER,
     ) -> None:
         """Initialize."""
+        self.logger = logging.getLogger(__name__)
         self.player = player
         self.width = width
         self.visualisation_type = visualisation_type
@@ -171,6 +173,8 @@ class SlimProtoDisplay:
 
         def pack() -> bytes:
             """Return the packed frame ready for transmission."""
+            if self.width != self.image.width:
+                self.logger.warn("Attempted to render %s x %s Image to %s x %s Display", self.image.width, self.image.height, self.width, self.height)
             pixmap = self.image.load()
             words = []
             for col in range(self.width):
