@@ -745,6 +745,12 @@ class SlimClient:
                 "code": code,
             },
         )
+    
+    def _process_dsco(self, data: bytes) -> None:
+        """Process incoming stat DSCO message (data stream disconnected)."""
+        self.logger.debug("DSCO received - data stream disconnected.")
+        # Some players may send this to indicate they have disconnected from the data stream
+        # Either becasue the stream ended, or because they have finished buffering the current file
 
     def _process_stat(self, data: bytes) -> None:
         """Redirect incoming STAT event from player to correct method."""
@@ -947,7 +953,7 @@ class SlimClient:
         if data_id == 0:
             # received player name
             self._device_name = data[1:-1].decode()
-            self.callback(self, EventType.PLAYER_NAME_RECEIVED)
+            self.callback(self, EventType.PLAYER_NAME_RECEIVED, self._device_name)
             self.logger = logging.getLogger(__name__).getChild(self._device_name)
         if data_id == 0xFE:
             # received display config (squeezebox2/squeezebox32)
@@ -965,6 +971,9 @@ class SlimClient:
                 self.display_control.width = display_width
             if display_height:
                 self.display_control.height = display_height
+            
+            resolution = (f"{display_width} x {display_height}")
+            self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
 
     def _parse_codc(self, content_type: str) -> bytes:
         """Parse CODEC details from mime/content type string."""
