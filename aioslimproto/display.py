@@ -114,7 +114,7 @@ class SlimProtoDisplay:
         self.width = width
         self.visualisation_type = visualisation_type
         # NOTE: height can only be 32, its not adjustable
-        self.image = Image.new("1", (width, 32))
+        self.image = Image.new("1", (self.width, 32))
         self.fonts: dict[str, Font] = {}
         for f in AVAILABLE_FONTS:
             self.fonts[f] = Font(f)
