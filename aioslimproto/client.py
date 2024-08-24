@@ -975,6 +975,12 @@ class SlimClient:
             resolution = (f"{display_width} x {display_height}")
             self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
 
+            if self.display_control.image.width != display_width:
+                # If the display resolution reported by the player doesn't match the display resolution we're currently using
+                self.display_control = None
+                self.display_control = SlimProtoDisplay(self, display_width)
+                # Re-instanciate SlimProtoDisplay with the correct resolution parameters
+
     def _parse_codc(self, content_type: str) -> bytes:
         """Parse CODEC details from mime/content type string."""
         if "wav" in content_type or "pcm" in content_type:
