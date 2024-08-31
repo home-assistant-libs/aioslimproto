@@ -558,7 +558,11 @@ class SlimClient:
                 flags=0,
                 replay_gain=heartbeat_id,
             )
-            await self._render_display()
+            # Don't render display on first heartbeat.
+            # Prevents IntegerDivideByZero exception when LED-VU 
+            # enabled on Squeezelite-ESP32 devices without displays
+            if (self._last_heartbeat > 1) :
+                await self._render_display()
             await asyncio.sleep(HEARTBEAT_INTERVAL)
 
     async def _socket_reader(self) -> None:
@@ -979,7 +983,7 @@ class SlimClient:
 
             # If player reports a display resolution with a value of 0
             if display_width == 0 or display_height == 0:
-                self.display_control.disabled = True  # noqa: FBT003
+                self.display_control.disabled = True
                 # Disable the display
             elif self.display_control.width != display_width:
                 # If the display resolution reported by the player doesn't match
