@@ -979,14 +979,13 @@ class SlimClient:
 
             # If player reports a display resolution with a value of 0
             if display_width == 0 or display_height == 0:
-                self.display_control.disabled(True)  # noqa: FBT003
+                self.display_control.disabled = True  # noqa: FBT003
                 # Disable the display
-            elif self.display_control.image.width != display_width:
+            elif self.display_control.width != display_width:
                 # If the display resolution reported by the player doesn't match
                 # the display resolution we're currently using
-                self.display_control = None
-                self.display_control = SlimProtoDisplay(self, display_width)
-                # Re-instanciate SlimProtoDisplay with the correct resolution parameters
+                self.display_control.width = display_width
+                # Update the display width
 
     def _parse_codc(self, content_type: str) -> bytes:
         """Parse CODEC details from mime/content type string."""
