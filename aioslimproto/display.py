@@ -10,7 +10,6 @@ https://github.com/winjer/squeal/blob/master/src/squeal/player/display.py
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import struct
 from typing import TYPE_CHECKING
@@ -109,7 +108,6 @@ class SlimProtoDisplay:
         visualisation_type: VisualisationType = VisualisationType.SPECTRUM_ANALYZER,
     ) -> None:
         """Initialize."""
-        self.logger = logging.getLogger(__name__)
         self.player = player
         self.width = width
         self.visualisation_type = visualisation_type
@@ -130,6 +128,8 @@ class SlimProtoDisplay:
         line_two: str = "",
         fullscreen: str = "",
     ) -> None:
+        if self.image.width != self.width:
+            self.image = Image.new("1", (self.width, 32))
         """Set (predefined) text lines on display."""
         if fullscreen:
             # clear regular lines when setting fullscreen
@@ -173,14 +173,6 @@ class SlimProtoDisplay:
 
         def pack() -> bytes:
             """Return the packed frame ready for transmission."""
-            if self.width != self.image.width:
-                self.logger.warning(
-                    "Attempted to render %s x %s Image to %s x %s Display",
-                    self.image.width,
-                    self.image.height,
-                    self.width,
-                    self.height,
-                )
             pixmap = self.image.load()
             words = []
             for col in range(self.width):
