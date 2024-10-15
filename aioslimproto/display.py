@@ -61,7 +61,6 @@ class Font:
         draw.text((0, 0), text, font=font, fill=255)
         return im
 
-
 class SlimProtoDisplay:
     """Representation of a Slimproto display."""
 
@@ -123,15 +122,14 @@ class SlimProtoDisplay:
         await self._render_display()
 
     async def set_lines(
-        """Set lines to display"""
         self,
         line_one: str = "",
         line_two: str = "",
         fullscreen: str = "",
     ) -> None:
+        """Set (predefined) text lines on display."""
         if self.image.width != self.width:
             self.image = Image.new("1", (self.width, 32))
-        """Set (predefined) text lines on display."""
         if fullscreen:
             # clear regular lines when setting fullscreen
             self.last_line_one = ""

@@ -559,7 +559,7 @@ class SlimClient:
                 replay_gain=heartbeat_id,
             )
             # Don't render display on first heartbeat.
-            # Prevents IntegerDivideByZero exception when LED-VU 
+            # Prevents IntegerDivideByZero exception when LED-VU
             # enabled on Squeezelite-ESP32 devices without displays
             if (self._last_heartbeat > 1) :
                 await self._render_display()
@@ -986,7 +986,7 @@ class SlimClient:
                 # the display resolution we're currently using
                 self.display_control.width = display_width
                 # Update the display width
-            
+
             # Trigger an event callback for "PLAYER_DISPLAY_RESOLUTION"
             resolution = f"{display_width} x {display_height}"
             self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
