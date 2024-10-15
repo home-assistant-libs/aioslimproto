@@ -977,10 +977,6 @@ class SlimClient:
             if display_height:
                 self.display_control.height = display_height
 
-            # Trigger an event callback for "PLAYER_DISPLAY_RESOLUTION"
-            resolution = f"{display_width} x {display_height}"
-            self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
-
             # If player reports a display resolution with a value of 0
             if display_width == 0 or display_height == 0:
                 self.display_control.disabled = True
@@ -990,6 +986,11 @@ class SlimClient:
                 # the display resolution we're currently using
                 self.display_control.width = display_width
                 # Update the display width
+            
+            # Trigger an event callback for "PLAYER_DISPLAY_RESOLUTION"
+            resolution = f"{display_width} x {display_height}"
+            self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
+
 
     def _parse_codc(self, content_type: str) -> bytes:
         """Parse CODEC details from mime/content type string."""
