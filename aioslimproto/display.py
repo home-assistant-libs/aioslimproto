@@ -123,6 +123,7 @@ class SlimProtoDisplay:
         await self._render_display()
 
     async def set_lines(
+        """Set lines to display"""
         self,
         line_one: str = "",
         line_two: str = "",
