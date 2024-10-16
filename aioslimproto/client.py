@@ -561,7 +561,7 @@ class SlimClient:
             # Don't render display on first heartbeat.
             # Prevents IntegerDivideByZero exception when LED-VU
             # enabled on Squeezelite-ESP32 devices without displays
-            if (self._last_heartbeat > 1) :
+            if (self._last_heartbeat > 1):
                 await self._render_display()
             await asyncio.sleep(HEARTBEAT_INTERVAL)
 
