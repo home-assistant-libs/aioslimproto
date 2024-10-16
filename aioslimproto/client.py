@@ -991,7 +991,6 @@ class SlimClient:
             resolution = f"{display_width} x {display_height}"
             self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
 
-
     def _parse_codc(self, content_type: str) -> bytes:
         """Parse CODEC details from mime/content type string."""
         if "wav" in content_type or "pcm" in content_type:
