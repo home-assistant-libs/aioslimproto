@@ -558,7 +558,11 @@ class SlimClient:
                 flags=0,
                 replay_gain=heartbeat_id,
             )
-            await self._render_display()
+            # Don't render display on first heartbeat.
+            # Prevents IntegerDivideByZero exception when LED-VU
+            # enabled on Squeezelite-ESP32 devices without displays
+            if self._last_heartbeat > 1:
+                await self._render_display()
             await asyncio.sleep(HEARTBEAT_INTERVAL)
 
     async def _socket_reader(self) -> None:
@@ -745,6 +749,13 @@ class SlimClient:
                 "code": code,
             },
         )
+
+    def _process_dsco(self, data: bytes) -> None:
+        """Process incoming stat DSCO message (data stream disconnected)."""
+        self.logger.debug("DSCO received - data stream disconnected.")
+        # Some players may send this to indicate they have disconnected
+        # from the data stream either because the stream ended, or because
+        # they have finished buffering the current file
 
     def _process_stat(self, data: bytes) -> None:
         """Redirect incoming STAT event from player to correct method."""
@@ -947,7 +958,7 @@ class SlimClient:
         if data_id == 0:
             # received player name
             self._device_name = data[1:-1].decode()
-            self.callback(self, EventType.PLAYER_NAME_RECEIVED)
+            self.callback(self, EventType.PLAYER_NAME_RECEIVED, self._device_name)
             self.logger = logging.getLogger(__name__).getChild(self._device_name)
         if data_id == 0xFE:
             # received display config (squeezebox2/squeezebox32)
@@ -965,6 +976,20 @@ class SlimClient:
                 self.display_control.width = display_width
             if display_height:
                 self.display_control.height = display_height
+
+            # If player reports a display resolution with a value of 0
+            if display_width == 0 or display_height == 0:
+                self.display_control.disabled = True
+                # Disable the display
+            elif self.display_control.width != display_width:
+                # If the display resolution reported by the player doesn't match
+                # the display resolution we're currently using
+                self.display_control.width = display_width
+                # Update the display width
+
+            # Trigger an event callback for "PLAYER_DISPLAY_RESOLUTION"
+            resolution = f"{display_width} x {display_height}"
+            self.callback(self, EventType.PLAYER_DISPLAY_RESOLUTION, resolution)
 
     def _parse_codc(self, content_type: str) -> bytes:
         """Parse CODEC details from mime/content type string."""

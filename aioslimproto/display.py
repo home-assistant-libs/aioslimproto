@@ -129,6 +129,8 @@ class SlimProtoDisplay:
         fullscreen: str = "",
     ) -> None:
         """Set (predefined) text lines on display."""
+        if self.image.width != self.width:
+            self.image = Image.new("1", (self.width, 32))
         if fullscreen:
             # clear regular lines when setting fullscreen
             self.last_line_one = ""
