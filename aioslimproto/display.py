@@ -61,6 +61,7 @@ class Font:
         draw.text((0, 0), text, font=font, fill=255)
         return im
 
+
 class SlimProtoDisplay:
     """Representation of a Slimproto display."""
 
