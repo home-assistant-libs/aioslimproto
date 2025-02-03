@@ -1045,7 +1045,7 @@ class SlimProtoCLI:
         menu_items = []
         if player := self.server.get_player(player_id):
             for index, preset in enumerate(player.presets):
-                preset_id = f"preset_{index+1}"
+                preset_id = f"preset_{index + 1}"
                 menu_items.append(
                     {
                         "id": preset_id,
